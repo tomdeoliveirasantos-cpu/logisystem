@@ -42,7 +42,7 @@ function exportXLS(rows) {
 
 function AnexoCell({ ordem }) {
   if (ordem.anexo_path) {
-    const url = `http://wsdevsoft.ddns.net:3000/uploads/${ordem.anexo_path}`;
+    const url = `https://api.wsdevsoft.com/uploads/${ordem.anexo_path}`;
     return (
       <a href={url} target="_blank" rel="noreferrer"
         style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'var(--accent)',textDecoration:'none'}}>
@@ -154,7 +154,7 @@ export default function Ordens() {
       fd.append('status', form.status||'pendente');
       if(visivel('anexo') && anexo) fd.append('anexo',anexo);
       const token = localStorage.getItem('logi_token');
-      const res = await fetch('http://wsdevsoft.ddns.net:3000/api/ordens',{method:'POST',body:fd,headers:{Authorization:`Bearer ${token}`}});
+      const res = await fetch('https://api.wsdevsoft.com/api/ordens',{method:'POST',body:fd,headers:{Authorization:`Bearer ${token}`}});
       if(!res.ok) throw new Error('Erro ao salvar');
       showToast('Ordem criada!'); refetch(); setModal(false); setForm({}); setAnexo(null);
     } catch(e) { showToast(e.message,'error'); }

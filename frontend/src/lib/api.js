@@ -1,4 +1,4 @@
-const BASE = 'http://wsdevsoft.ddns.net:3000/api';
+const BASE = 'https://api.wsdevsoft.com/api';
 
 function getToken() {
   return localStorage.getItem('logi_token');

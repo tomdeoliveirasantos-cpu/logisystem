@@ -17,45 +17,63 @@ import {
 
 function UserMenu({ collapsed }) {
   const { user, logout } = useAuth();
-  const [open, setOpen] = useState(false);
-  const perfilColor = { admin: '#16A34A', operador: '#2563EB', financeiro: '#D97706' };
+  const perfilColor = { admin: '#22C55E', operador: '#60A5FA', financeiro: '#FBBF24' };
   const perfilLabel = { admin: 'Admin', operador: 'Operador', financeiro: 'Financeiro' };
 
   if (collapsed) return (
-    <div style={{padding:'10px 8px',borderTop:'1px solid rgba(255,255,255,.08)',display:'flex',justifyContent:'center'}}>
-      <div style={{width:32,height:32,borderRadius:'50%',background:perfilColor[user?.perfil]||'#2563EB',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:'#fff',cursor:'pointer'}}
+    <div style={{marginTop:'auto',borderTop:'1px solid rgba(255,255,255,.08)',padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
+      <div
+        style={{width:34,height:34,borderRadius:'50%',background:perfilColor[user?.perfil]||'#60A5FA',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff'}}
         title={`${user?.nome} — ${perfilLabel[user?.perfil]}`}
-        onClick={logout}>
+      >
         {user?.nome?.charAt(0).toUpperCase()}
       </div>
+      <button
+        onClick={logout}
+        title="Sair"
+        style={{background:'rgba(255,255,255,.07)',border:'none',borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'rgba(255,255,255,.6)',transition:'all .15s'}}
+        onMouseEnter={e=>{e.currentTarget.style.background='rgba(220,38,38,.25)';e.currentTarget.style.color='#FCA5A5';}}
+        onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.07)';e.currentTarget.style.color='rgba(255,255,255,.6)';}}
+      >
+        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+        </svg>
+      </button>
     </div>
   );
 
   return (
-    <div style={{marginTop:'auto',padding:'10px 12px',borderTop:'1px solid rgba(255,255,255,.08)',position:'relative'}}>
-      <div onClick={()=>setOpen(!open)} style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',padding:'6px 8px',borderRadius:8,transition:'background .15s'}}
-        onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.08)'}
-        onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-        <div style={{width:32,height:32,borderRadius:'50%',background:perfilColor[user?.perfil]||'#2563EB',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:'#fff',flexShrink:0}}>
+    <div style={{marginTop:'auto',padding:'10px 12px',borderTop:'1px solid rgba(255,255,255,.08)'}}>
+      {/* Info do usuário */}
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'6px 8px',borderRadius:10,marginBottom:6}}>
+        <div style={{width:34,height:34,borderRadius:'50%',background:perfilColor[user?.perfil]||'#60A5FA',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff',flexShrink:0}}>
           {user?.nome?.charAt(0).toUpperCase()}
         </div>
         <div style={{flex:1,overflow:'hidden'}}>
-          <div style={{fontSize:12,fontWeight:500,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.nome}</div>
-          <div style={{fontSize:10,color:perfilColor[user?.perfil]||'#9BAABB'}}>{perfilLabel[user?.perfil]}</div>
+          <div style={{fontSize:12,fontWeight:600,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.nome}</div>
+          <div style={{fontSize:10,color:perfilColor[user?.perfil]||'#9BAABB',fontWeight:500}}>{perfilLabel[user?.perfil]}</div>
         </div>
-        <span style={{color:'rgba(255,255,255,.4)',fontSize:10}}>{open?'▼':'▲'}</span>
       </div>
-      {open && (
-        <div style={{position:'absolute',bottom:'100%',left:8,right:8,background:'#fff',border:'1px solid #E2E8F0',borderRadius:10,boxShadow:'0 4px 16px rgba(0,0,0,.12)',overflow:'hidden',zIndex:200}}>
-          <div style={{padding:'10px 14px',borderBottom:'1px solid #E2E8F0'}}>
-            <div style={{fontSize:13,fontWeight:500,color:'#1A2740'}}>{user?.nome}</div>
-            <div style={{fontSize:11,color:'#9BAABB'}}>{user?.email}</div>
-          </div>
-          <button onClick={logout} style={{width:'100%',padding:'10px 14px',background:'none',border:'none',textAlign:'left',fontSize:13,color:'#DC2626',cursor:'pointer',fontFamily:'inherit'}}>
-            Sair da conta
-          </button>
-        </div>
-      )}
+
+      {/* Botão Sair — sempre visível */}
+      <button
+        onClick={logout}
+        style={{
+          width:'100%', padding:'9px 12px',
+          background:'rgba(255,255,255,.06)',
+          border:'1px solid rgba(255,255,255,.1)',
+          borderRadius:9, display:'flex', alignItems:'center', gap:8,
+          fontSize:13, fontWeight:500, color:'rgba(255,255,255,.65)',
+          cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
+        }}
+        onMouseEnter={e=>{e.currentTarget.style.background='rgba(220,38,38,.2)';e.currentTarget.style.borderColor='rgba(220,38,38,.4)';e.currentTarget.style.color='#FCA5A5';}}
+        onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.06)';e.currentTarget.style.borderColor='rgba(255,255,255,.1)';e.currentTarget.style.color='rgba(255,255,255,.65)';}}
+      >
+        <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+        </svg>
+        Sair da conta
+      </button>
     </div>
   );
 }

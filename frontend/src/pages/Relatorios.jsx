@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, CartesianGrid, Cell,
 } from 'recharts';
 
-const fmt = v => v != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 }).format(v) : '—';
+const fmt = v => v !== null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 }).format(v) : '—';
 
 const COLORS = { TRUCK: '#4f6ef7', TOCO: '#14b8a6', IVECO: '#f59e0b', '3/4': '#22c55e', HR: '#a855f7' };
 

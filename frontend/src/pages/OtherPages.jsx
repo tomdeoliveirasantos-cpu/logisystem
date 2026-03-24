@@ -1,9 +1,10 @@
+/* global URLSearchParams */
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
 import { StatusBadge, Modal, Field, Input, Select, Textarea, useToast, Toast } from '../components/UI';
 
-const fmt = v => v!=null ? new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v) : '—';
+const fmt = v => v!==null ? new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v) : '—';
 const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR') : '—';
 
 function xlsBtn(label, rows, cols) {

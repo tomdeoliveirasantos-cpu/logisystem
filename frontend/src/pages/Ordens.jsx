@@ -1,5 +1,4 @@
 /* global URLSearchParams */
-/* global URLSearchParams */
 import { useState, useRef } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';

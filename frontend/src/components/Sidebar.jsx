@@ -1,9 +1,15 @@
 import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+const LogoutIcon = () => (
+  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{flexShrink:0}}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+  </svg>
+);
+
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
   const { pathname } = useLocation();
-  const { podeAcessar } = useAuth();
+  const { podeAcessar, logout, user } = useAuth();
 
   const nav = [
     {
@@ -104,12 +110,70 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           );
         })}
 
-        {/* Version */}
-        {!collapsed && (
-          <div style={{marginTop:'auto',padding:'14px',borderTop:'1px solid rgba(255,255,255,.08)'}}>
-            <div style={{fontSize:11,color:'rgba(255,255,255,.25)'}}>LogiSystem v3.0</div>
+        {/* Footer: versão + logout */}
+        <div style={{marginTop:'auto',borderTop:'1px solid rgba(255,255,255,.08)'}}>
+
+          {/* Info do usuário (expandido) */}
+          {!collapsed && user && (
+            <div style={{padding:'12px 14px 0',display:'flex',alignItems:'center',gap:10}}>
+              <div style={{
+                width:32,height:32,borderRadius:'50%',flexShrink:0,
+                background:'linear-gradient(135deg,#3B82F6,#2563EB)',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:13,fontWeight:700,color:'#fff',
+              }}>
+                {user?.nome?.charAt(0).toUpperCase()}
+              </div>
+              <div style={{flex:1,overflow:'hidden'}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.nome}</div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,.4)',marginTop:1}}>{user?.email}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Botão Sair */}
+          <div style={{padding: collapsed ? '12px 8px' : '10px 10px 12px'}}>
+            <button
+              onClick={logout}
+              title="Sair da conta"
+              style={{
+                width:'100%',
+                padding: collapsed ? '10px' : '10px 12px',
+                background:'rgba(255,255,255,.06)',
+                border:'1px solid rgba(255,255,255,.1)',
+                borderRadius:9,
+                display:'flex',
+                alignItems:'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap:8,
+                fontSize:13,
+                fontWeight:500,
+                color:'rgba(255,255,255,.6)',
+                cursor:'pointer',
+                fontFamily:'inherit',
+                transition:'all .15s',
+              }}
+              onMouseEnter={e=>{
+                e.currentTarget.style.background='rgba(220,38,38,.2)';
+                e.currentTarget.style.borderColor='rgba(220,38,38,.4)';
+                e.currentTarget.style.color='#FCA5A5';
+              }}
+              onMouseLeave={e=>{
+                e.currentTarget.style.background='rgba(255,255,255,.06)';
+                e.currentTarget.style.borderColor='rgba(255,255,255,.1)';
+                e.currentTarget.style.color='rgba(255,255,255,.6)';
+              }}
+            >
+              <LogoutIcon />
+              {!collapsed && <span>Sair</span>}
+            </button>
           </div>
-        )}
+
+          {/* Versão */}
+          {!collapsed && (
+            <div style={{padding:'0 14px 12px',fontSize:10,color:'rgba(255,255,255,.2)'}}>LogiSystem v3.0</div>
+          )}
+        </div>
       </aside>
     </>
   );

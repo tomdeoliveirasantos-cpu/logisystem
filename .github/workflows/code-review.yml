@@ -1,0 +1,33 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  code-review:
+    name: "\U0001F916 Claude Code Review"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          direct_prompt: |
+            Revise este PR focando em:
+            1. Bugs e erros logicos
+            2. Problemas de seguranca
+            3. Performance
+            4. Boas praticas Node.js/Express e React
+            Seja direto. So comente se encontrar problemas reais.
+            Responda em portugues brasileiro.

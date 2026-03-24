@@ -1,11 +1,12 @@
 {
   "name": "logisystem-api",
   "version": "2.1.0",
-  "description": "LogiSystem API — com autenticação JWT e controle de acesso",
+  "description": "LogiSystem API",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "lint": "eslint src/",
     "migrate:auth": "node migrate_auth.js"
   },
   "dependencies": {
@@ -21,6 +22,8 @@
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0"
   }
 }

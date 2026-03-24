@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Build
+frontend/dist/
+frontend/build/
+
+# Env — NUNCA commitar
+backend/.env
+.env
+
+# Uploads dos usuários
+backend/uploads/
+
+# PM2
+.pm2/
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# VS Code
+.vscode/settings.json

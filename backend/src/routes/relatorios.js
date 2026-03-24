@@ -1,0 +1,126 @@
+const express = require('express');
+const db = require('../db');
+
+const router = express.Router();
+
+// GET /api/relatorios/faturamento?mes=2026-01
+router.get('/faturamento', async (req, res, next) => {
+  try {
+    const { mes } = req.query; // formato YYYY-MM
+    const params = mes ? [`${mes}%`] : ['%'];
+    const { rows } = await db.query(
+      `SELECT
+         v.tipo                              AS veiculo_tipo,
+         COUNT(DISTINCT o.numero_rota)       AS total_rotas,
+         COUNT(o.id)                         AS total_entregas,
+         SUM(CASE WHEN o.status='entregue' THEN 1 ELSE 0 END) AS entregas_ok,
+         SUM(CASE WHEN o.status='devolucao' THEN 1 ELSE 0 END) AS devolucoes,
+         COALESCE(SUM(cr.valor), 0)          AS valor_receber,
+         COALESCE(SUM(cp.valor), 0)          AS valor_pagar,
+         COALESCE(SUM(cr.valor) - SUM(cp.valor), 0) AS margem
+       FROM logi_ordens_transporte o
+       LEFT JOIN logi_veiculos v          ON v.id = o.veiculo_id
+       LEFT JOIN logi_contas_receber cr   ON cr.ordem_id = o.id
+       LEFT JOIN logi_contas_pagar cp     ON cp.ordem_id = o.id
+       WHERE o.data::text LIKE $1
+       GROUP BY v.tipo
+       ORDER BY valor_receber DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/resumo-diario?data=2026-01-05
+router.get('/resumo-diario', async (req, res, next) => {
+  try {
+    const { data } = req.query;
+    const params = data ? [data] : [new Date().toISOString().split('T')[0]];
+    const { rows } = await db.query(
+      `SELECT
+         o.numero_rota,
+         m.nome                               AS motorista,
+         v.placa, v.tipo                      AS veiculo,
+         COUNT(o.id)                          AS paradas,
+         SUM(o.peso)                          AS peso_total,
+         SUM(CASE WHEN o.status='entregue'   THEN 1 ELSE 0 END) AS entregues,
+         SUM(CASE WHEN o.status='devolucao'  THEN 1 ELSE 0 END) AS devolucoes,
+         SUM(CASE WHEN o.status='pendente'   THEN 1 ELSE 0 END) AS pendentes,
+         ROUND(
+           SUM(CASE WHEN o.status='entregue' THEN 1 ELSE 0 END)::numeric /
+           NULLIF(COUNT(o.id),0) * 100, 1
+         )                                    AS pct_entrega
+       FROM logi_ordens_transporte o
+       LEFT JOIN logi_motoristas m ON m.id = o.motorista_id
+       LEFT JOIN logi_veiculos   v ON v.id = o.veiculo_id
+       WHERE o.data = $1
+       GROUP BY o.numero_rota, m.nome, v.placa, v.tipo
+       ORDER BY o.numero_rota`,
+      params
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/evolucao-diaria?inicio=2026-01-01&fim=2026-01-31
+router.get('/evolucao-diaria', async (req, res, next) => {
+  try {
+    const { inicio, fim } = req.query;
+    const params = [inicio || '2026-01-01', fim || new Date().toISOString().split('T')[0]];
+    const { rows } = await db.query(
+      `SELECT
+         o.data,
+         COUNT(DISTINCT o.numero_rota)         AS rotas,
+         COUNT(o.id)                           AS total_paradas,
+         SUM(CASE WHEN o.status='entregue' THEN 1 ELSE 0 END) AS entregas,
+         SUM(CASE WHEN o.status='devolucao' THEN 1 ELSE 0 END) AS devolucoes,
+         COALESCE(SUM(cr.valor), 0)            AS faturado
+       FROM logi_ordens_transporte o
+       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id
+       WHERE o.data BETWEEN $1 AND $2
+       GROUP BY o.data
+       ORDER BY o.data`,
+      params
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/contas-pagar-resumo
+router.get('/contas-pagar-resumo', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         t.nome AS transportadora,
+         COUNT(cp.id)                          AS lancamentos,
+         SUM(cp.valor)                         AS total,
+         SUM(CASE WHEN cp.status='pendente' THEN cp.valor ELSE 0 END) AS em_aberto,
+         SUM(CASE WHEN cp.status='pago'     THEN cp.valor ELSE 0 END) AS pago,
+         SUM(CASE WHEN cp.status='vencido'  THEN cp.valor ELSE 0 END) AS vencido
+       FROM logi_contas_pagar cp
+       LEFT JOIN logi_transportadoras t ON t.id = cp.transportadora_id
+       GROUP BY t.nome ORDER BY total DESC`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/contas-receber-resumo
+router.get('/contas-receber-resumo', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         cr.cliente,
+         COUNT(cr.id)                          AS lancamentos,
+         SUM(cr.valor)                         AS total,
+         SUM(CASE WHEN cr.status='pendente'  THEN cr.valor ELSE 0 END) AS em_aberto,
+         SUM(CASE WHEN cr.status='recebido'  THEN cr.valor ELSE 0 END) AS recebido,
+         SUM(CASE WHEN cr.status='vencido'   THEN cr.valor ELSE 0 END) AS vencido
+       FROM logi_contas_receber cr
+       GROUP BY cr.cliente ORDER BY total DESC LIMIT 50`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+module.exports = router;

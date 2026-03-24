@@ -1,0 +1,27 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# Build
+dist/
+build/
+
+# Env — NUNCA commitar
+.env
+.env.local
+.env.production
+
+# Uploads — arquivos dos usuários
+uploads/
+
+# PM2
+.pm2/
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# VS Code
+.vscode/settings.json

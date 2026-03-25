@@ -63,7 +63,8 @@ router.get('/pagar', async (req, res, next) => {
     const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const { rows } = await db.query(
       `SELECT cp.*, t.nome AS transportadora_nome, m.nome AS motorista_nome,
-              tf.regiao, tf.valor_base AS frete_referencia
+              tf.regiao, tf.valor_base AS frete_referencia,
+              cp.tipo_lancamento, cp.descricao
        FROM logi_contas_pagar cp
        LEFT JOIN logi_transportadoras t ON t.id = cp.transportadora_id
        LEFT JOIN logi_motoristas m ON m.id = cp.motorista_id

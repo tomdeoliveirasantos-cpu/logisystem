@@ -103,7 +103,11 @@ export default function Ordens() {
   const { data: veiculos }           = useFetch('/veiculos');
   const { data: fretes }             = useFetch('/financeiro/fretes?tipo_frete=recebido');
 
-  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  // Detecta se o veículo selecionado é frota própria
+  const veiculoSelecionado = (veiculos||[]).find(v => v.id === form.veiculo_id);
+  const isFrotaPropria = veiculoSelecionado?.ag_ft === 'frota';
+
+  const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const onClienteChange = (id) => {
     set('cliente_id',id);
     const cli=(clientes||[]).find(c=>c.id===id);
@@ -142,7 +146,8 @@ export default function Ordens() {
       if(form.cliente_nome) fd.append('cliente_nome',form.cliente_nome);
       if(form.motorista_id) fd.append('motorista_id',form.motorista_id);
       if(form.veiculo_id) fd.append('veiculo_id',form.veiculo_id);
-      if(visivel('tarifa') && form.tabela_frete_id) fd.append('tabela_frete_id',form.tabela_frete_id);
+      if(form.tabela_frete_id) fd.append('tabela_frete_id',form.tabela_frete_id);
+      if(form.ajudante_nome) fd.append('ajudante_nome',form.ajudante_nome);
       if(form.regiao) fd.append('regiao',form.regiao);
       if(form.tipo) fd.append('tipo',form.tipo);
       if(form.pedido) fd.append('pedido',form.pedido);
@@ -324,9 +329,16 @@ export default function Ordens() {
                   <Select value={form.motorista_id||''} onChange={e=>set('motorista_id',e.target.value)}
                     options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
                 </Field>
+                <Field label="Ajudante">
+                  <Input
+                    value={form.ajudante_nome||''}
+                    onChange={e=>set('ajudante_nome',e.target.value)}
+                    placeholder="Nome do ajudante (opcional)"
+                  />
+                </Field>
                 <Field label={<span>Veículo <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
-                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo}`}))} />
+                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🤝 Agregado'}`}))} />
                 </Field>
                 <Field label="Região">
                   <Input value={form.regiao||''} onChange={e=>set('regiao',e.target.value)} placeholder="ex: Zona Sul" />

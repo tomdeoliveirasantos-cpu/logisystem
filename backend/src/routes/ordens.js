@@ -100,7 +100,9 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
       cliente_id, motorista_id, veiculo_id, data, numero_rota, seq=1,
       saida, pedido, cliente_nome, regiao, peso, km, nf, remessa,
       status='pendente', tipo, pagto,
-      ajuda_diesel=0, taxa_descarga=0, n_cont, q_capas=0, obs
+      ajuda_diesel=0, taxa_descarga=0, n_cont, q_capas=0, obs,
+      ajudante_nome,
+      tabela_frete_id,
     } = req.body;
 
     const anexo_nome  = req.file ? req.file.originalname : null;
@@ -112,15 +114,88 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
         (cliente_id,motorista_id,veiculo_id,data,numero_rota,seq,saida,pedido,
          cliente_nome,regiao,peso,km,nf,remessa,status,tipo,pagto,
          ajuda_diesel,taxa_descarga,n_cont,q_capas,obs,
-         anexo_nome,anexo_path,anexo_tamanho)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+         anexo_nome,anexo_path,anexo_tamanho,ajudante_nome)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
        RETURNING *`,
       [cliente_id,motorista_id,veiculo_id,data,numero_rota,seq,saida,pedido,
        cliente_nome,regiao,peso,km,nf,remessa,status,tipo,pagto,
        ajuda_diesel,taxa_descarga,n_cont,q_capas,obs,
-       anexo_nome,anexo_path,anexo_size]
+       anexo_nome,anexo_path,anexo_size,ajudante_nome||null]
     );
-    res.status(201).json(rows[0]);
+
+    const ordem = rows[0];
+
+    // ── Geração automática de Contas a Pagar ─────────────────
+    // Busca dados do veículo para saber se é frota própria ou agregado
+    if (motorista_id || veiculo_id) {
+      const { rows: vrows } = await db.query(
+        `SELECT v.ag_ft, v.tipo AS veiculo_tipo,
+                m.nome AS motorista_nome,
+                t.id AS transportadora_id, t.nome AS transportadora_nome
+         FROM logi_veiculos v
+         LEFT JOIN logi_motoristas m ON m.id = $2
+         LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
+         WHERE v.id = $1`,
+        [veiculo_id, motorista_id]
+      );
+
+      if (vrows.length) {
+        const veiculo = vrows[0];
+        const descBase = `Ordem ${numero_rota || ordem.id} - ${regiao || ''} - ${data}`;
+
+        if (veiculo.ag_ft === 'agregado') {
+          // Frete agregado → paga para a transportadora com base na tabela de fretes
+          let valorFrete = null;
+          if (tabela_frete_id) {
+            const { rows: fr } = await db.query(
+              'SELECT valor_base FROM logi_tabela_fretes WHERE id = $1', [tabela_frete_id]
+            );
+            if (fr.length) valorFrete = fr[0].valor_base;
+          }
+          if (valorFrete) {
+            await db.query(
+              `INSERT INTO logi_contas_pagar
+                (ordem_id, tabela_frete_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [ordem.id, tabela_frete_id||null, veiculo.transportadora_id||null, motorista_id||null,
+               valorFrete, data, `Frete agregado - ${veiculo.transportadora_nome||''} - ${descBase}`, 'frete_agregado']
+            );
+          }
+        } else if (veiculo.ag_ft === 'frota') {
+          // Frota própria → gera diária do motorista
+          let valorDiaria = null;
+          if (tabela_frete_id) {
+            const { rows: fr } = await db.query(
+              'SELECT valor_base FROM logi_tabela_fretes WHERE id = $1', [tabela_frete_id]
+            );
+            if (fr.length) valorDiaria = fr[0].valor_base;
+          }
+          if (valorDiaria && motorista_id) {
+            await db.query(
+              `INSERT INTO logi_contas_pagar
+                (ordem_id, tabela_frete_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [ordem.id, tabela_frete_id||null, motorista_id,
+               valorDiaria, data,
+               `Diária motorista - ${veiculo.motorista_nome||''} - ${descBase}`, 'diaria_motorista']
+            );
+          }
+          // Diária do ajudante (se informado)
+          if (valorDiaria && ajudante_nome) {
+            await db.query(
+              `INSERT INTO logi_contas_pagar
+                (ordem_id, tabela_frete_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [ordem.id, tabela_frete_id||null, motorista_id,
+               valorDiaria, data,
+               `Diária ajudante - ${ajudante_nome} - ${descBase}`, 'diaria_ajudante']
+            );
+          }
+        }
+      }
+    }
+
+    res.status(201).json(ordem);
   } catch (err) { next(err); }
 });
 

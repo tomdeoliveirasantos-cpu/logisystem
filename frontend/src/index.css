@@ -462,6 +462,7 @@ tbody tr:hover td { background: #F8FAFF; }
     padding: 10px 12px; font-size: 14px;
     min-height: 42px;
   }
+  .form-input[type="date"] { text-align: left; }
 
   /* Filtros da page-header empilham */
   .page-header .form-input,

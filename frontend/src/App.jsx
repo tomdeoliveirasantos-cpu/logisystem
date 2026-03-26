@@ -10,8 +10,9 @@ import Ordens from './pages/Ordens';
 import Relatorios from './pages/Relatorios';
 import Usuarios from './pages/Usuarios';
 import Parametros from './pages/Parametros';
+import TabelaFretesPage from './pages/TabelaFretes';
 import {
-  ContasReceber, ContasPagar, TabelaFretes,
+  ContasReceber, ContasPagar,
   Manutencoes, Multas, Veiculos, Motoristas,
 } from './pages/OtherPages';
 
@@ -138,7 +139,7 @@ function ProtectedApp() {
             <Route path="/multas" element={podeAcessar('multas') ? <Multas /> : <Navigate to="/" />} />
             <Route path="/receber" element={podeAcessar('financeiro') ? <ContasReceber /> : <Navigate to="/" />} />
             <Route path="/pagar" element={podeAcessar('financeiro') ? <ContasPagar /> : <Navigate to="/" />} />
-            <Route path="/fretes" element={podeAcessar('financeiro') ? <TabelaFretes /> : <Navigate to="/" />} />
+            <Route path="/fretes" element={podeAcessar('financeiro') ? <TabelaFretesPage /> : <Navigate to="/" />} />
             <Route path="/relatorios" element={podeAcessar('relatorios') ? <Relatorios /> : <Navigate to="/" />} />
             <Route path="/usuarios" element={podeAcessar('usuarios') ? <Usuarios /> : <Navigate to="/" />} />
             <Route path="/parametros" element={podeAcessar('usuarios') ? <Parametros /> : <Navigate to="/" />} />

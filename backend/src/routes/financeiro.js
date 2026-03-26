@@ -3,7 +3,7 @@ const db = require('../db');
 
 const router = express.Router();
 
-// ── CONTAS A RECEBER ──────────────────────────────────────────
+// ════ CONTAS A RECEBER ════════════════════════════════════════════════════════
 // GET /api/financeiro/receber
 router.get('/receber', async (req, res, next) => {
   try {
@@ -40,7 +40,7 @@ router.post('/receber', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// PATCH /api/financeiro/receber/:id/pagar
+// PATCH /api/financeiro/receber/:id/receber
 router.patch('/receber/:id/receber', async (req, res, next) => {
   try {
     const { rows } = await db.query(
@@ -52,7 +52,7 @@ router.patch('/receber/:id/receber', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── CONTAS A PAGAR ────────────────────────────────────────────
+// ════ CONTAS A PAGAR ══════════════════════════════════════════════════════════
 // GET /api/financeiro/pagar
 router.get('/pagar', async (req, res, next) => {
   try {
@@ -101,31 +101,55 @@ router.patch('/pagar/:id/pagar', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ════ TABELA DE FRETES ═══════════════════════════════════════════════════════
 // GET /api/financeiro/fretes  (tabela de referência)
 router.get('/fretes', async (req, res, next) => {
   try {
-    const { tipo_frete, tipo_veiculo } = req.query;
+    const { tipo_frete, tipo_veiculo, sub_tabela } = req.query;
     const params = [];
     const where = [];
     if (tipo_frete)   { params.push(tipo_frete);   where.push(`tipo_frete = $${params.length}`); }
     if (tipo_veiculo) { params.push(tipo_veiculo); where.push(`tipo_veiculo = $${params.length}`); }
+    if (sub_tabela)   { params.push(sub_tabela);   where.push(`sub_tabela = $${params.length}`); }
     const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const { rows } = await db.query(
-      `SELECT * FROM logi_tabela_fretes ${wc} ORDER BY tipo_frete, regiao, tipo_veiculo`, params
+      `SELECT * FROM logi_tabela_fretes ${wc} ORDER BY tipo_frete, sub_tabela, regiao, tipo_veiculo`, params
     );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
+// GET /api/financeiro/fretes/recebido — tabela fixa de frete recebido por veículo
+router.get('/fretes/recebido', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT * FROM logi_tabela_frete_recebido ORDER BY id`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
 
-// ── CRUD TABELA FRETES ────────────────────────────────────────
+// PUT /api/financeiro/fretes/recebido/:id — atualizar valor do frete recebido
+router.put('/fretes/recebido/:id', async (req, res, next) => {
+  try {
+    const { valor } = req.body;
+    const { rows } = await db.query(
+      `UPDATE logi_tabela_frete_recebido SET valor=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+      [valor, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// POST /api/financeiro/fretes
 router.post('/fretes', async (req, res, next) => {
   try {
-    const { regiao, tipo_veiculo, km_max, valor_base, tipo_frete } = req.body;
+    const { regiao, tipo_veiculo, km_max, valor_base, tipo_frete, sub_tabela } = req.body;
     const { rows } = await db.query(
-      `INSERT INTO logi_tabela_fretes (regiao,tipo_veiculo,km_max,valor_base,tipo_frete)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [regiao, tipo_veiculo, km_max||null, valor_base, tipo_frete]
+      `INSERT INTO logi_tabela_fretes (regiao,tipo_veiculo,km_max,valor_base,tipo_frete,sub_tabela)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [regiao, tipo_veiculo, km_max||null, valor_base, tipo_frete, sub_tabela||'sp']
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -133,11 +157,11 @@ router.post('/fretes', async (req, res, next) => {
 
 router.put('/fretes/:id', async (req, res, next) => {
   try {
-    const { regiao, tipo_veiculo, km_max, valor_base, tipo_frete } = req.body;
+    const { regiao, tipo_veiculo, km_max, valor_base, tipo_frete, sub_tabela } = req.body;
     const { rows } = await db.query(
-      `UPDATE logi_tabela_fretes SET regiao=$1,tipo_veiculo=$2,km_max=$3,valor_base=$4,tipo_frete=$5
-       WHERE id=$6 RETURNING *`,
-      [regiao, tipo_veiculo, km_max||null, valor_base, tipo_frete, req.params.id]
+      `UPDATE logi_tabela_fretes SET regiao=$1,tipo_veiculo=$2,km_max=$3,valor_base=$4,tipo_frete=$5,sub_tabela=$6
+       WHERE id=$7 RETURNING *`,
+      [regiao, tipo_veiculo, km_max||null, valor_base, tipo_frete, sub_tabela||'sp', req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
     res.json(rows[0]);
@@ -148,6 +172,41 @@ router.delete('/fretes/:id', async (req, res, next) => {
   try {
     await db.query('DELETE FROM logi_tabela_fretes WHERE id=$1', [req.params.id]);
     res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+// ════ BUSCAR VALOR DE FRETE AUTOMÁTICO ═══════════════════════════════════════
+// GET /api/financeiro/fretes/buscar?regiao=X&tipo_veiculo=Y
+// Retorna o valor da tabela agregado + o valor fixo recebido para o veículo
+router.get('/fretes/buscar', async (req, res, next) => {
+  try {
+    const { regiao, tipo_veiculo } = req.query;
+    if (!regiao || !tipo_veiculo) {
+      return res.status(400).json({ error: 'regiao e tipo_veiculo são obrigatórios' });
+    }
+
+    // Buscar frete agregado (pagar) pela região + veículo
+    const { rows: agregado } = await db.query(
+      `SELECT * FROM logi_tabela_fretes
+       WHERE tipo_frete='agregado' AND sub_tabela='sp'
+         AND UPPER(TRIM(regiao)) = UPPER(TRIM($1))
+         AND UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($2))
+       LIMIT 1`,
+      [regiao, tipo_veiculo]
+    );
+
+    // Buscar frete recebido (fixo por veículo)
+    const { rows: recebido } = await db.query(
+      `SELECT * FROM logi_tabela_frete_recebido
+       WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))
+       LIMIT 1`,
+      [tipo_veiculo]
+    );
+
+    res.json({
+      pagar: agregado[0] || null,
+      receber: recebido[0] || null,
+    });
   } catch (err) { next(err); }
 });
 

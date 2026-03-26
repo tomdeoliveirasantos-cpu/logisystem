@@ -210,4 +210,16 @@ router.get('/fretes/buscar', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/financeiro/fretes/regioes — regiões distintas cadastradas
+router.get('/fretes/regioes', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT DISTINCT regiao FROM logi_tabela_fretes
+       WHERE tipo_frete='agregado' AND sub_tabela='sp'
+       ORDER BY regiao`
+    );
+    res.json(rows.map(r => r.regiao));
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

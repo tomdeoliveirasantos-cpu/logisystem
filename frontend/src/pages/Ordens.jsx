@@ -151,6 +151,7 @@ export default function Ordens() {
   const { data: clientes }           = useFetch('/clientes');
   const { data: motoristas }         = useFetch('/motoristas');
   const { data: veiculos }           = useFetch('/veiculos');
+  const { data: regioes }            = useFetch('/financeiro/fretes/regioes');
 
   // Veículo selecionado
   const veiculoSelecionado = useMemo(
@@ -430,7 +431,8 @@ export default function Ordens() {
                     options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚛 Agregado'}`}))} />
                 </Field>
                 <Field label={<span>Região <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(define frete)</span></span>}>
-                  <Input value={form.regiao||''} onChange={e=>set('regiao',e.target.value)} placeholder="ex: ZONA SUL, OSASCO, ATIBAIA" />
+                  <Select value={form.regiao||''} onChange={e=>set('regiao',e.target.value)}
+                    options={(regioes||[]).map(r=>({value:r,label:r}))} />
                 </Field>
 
                 {/* Tipo + Pedido */}

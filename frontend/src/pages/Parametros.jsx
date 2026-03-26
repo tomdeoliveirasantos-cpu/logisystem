@@ -158,6 +158,44 @@ export default function Parametros() {
           </div>
         </div>
 
+        {/* Card de valores financeiros */}
+        <div className="card fade-up fade-up-1" style={{marginBottom:16}}>
+          <div style={{marginBottom:18}}>
+            <div className="section-title">Valores Financeiros</div>
+            <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>
+              Valores usados nos cálculos automáticos de frete e lançamentos financeiros.
+            </div>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:12}}>
+            {/* Valor do ajudante */}
+            <div style={{padding:'16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--radius)'}}>
+              <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>
+                Valor do Ajudante
+              </div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:10}}>
+                Adicionado ao Contas a Pagar quando a ordem tem ajudante informado.
+              </div>
+              {isAdmin ? (
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:13,color:'var(--text3)'}}>R$</span>
+                  <input
+                    type="number" step="0.01" min="0"
+                    className="form-input"
+                    style={{width:120,fontSize:16,fontWeight:600,textAlign:'center'}}
+                    value={edited.valor_ajudante || ''}
+                    onChange={e => set('valor_ajudante', e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div style={{fontSize:22,fontWeight:700,color:'var(--accent)'}}>
+                  R$ {Number(edited.valor_ajudante || 0).toFixed(2)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Preview */}
         <div className="card fade-up fade-up-1">
           <div style={{marginBottom:14}}>

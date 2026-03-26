@@ -83,8 +83,12 @@ function FL({ label, obrig, children }) {
 }
 
 // ════ Card de resumo do frete (exibido no modal) ═════════════════════════════
-function FreteResumo({ veiculo, regiao, freteData, loading }) {
+function FreteResumo({ veiculo, regiao, freteData, loading, temAjudante, valorAjudante }) {
   if (!veiculo) return null;
+
+  const valorPagar = freteData?.pagar ? Number(freteData.pagar.valor_base) : 0;
+  const ajudante = temAjudante ? (valorAjudante || 0) : 0;
+  const totalPagar = valorPagar + ajudante;
 
   return (
     <div style={{
@@ -110,11 +114,14 @@ function FreteResumo({ veiculo, regiao, freteData, loading }) {
           <div style={{ padding: '10px 12px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 'var(--radius)' }}>
             <div style={{ fontSize: 10, color: '#B45309', fontWeight: 600, marginBottom: 4 }}>PAGAR (Agregado)</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#B45309' }}>
-              {freteData?.pagar ? fmt(freteData.pagar.valor_base) : '—'}
+              {totalPagar > 0 ? fmt(totalPagar) : '—'}
             </div>
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
-              {regiao ? `Região: ${regiao}` : 'Preencha a região'}
-              {veiculo.ag_ft === 'frota' && ' (frota própria — sem frete agregado)'}
+              {regiao && valorPagar > 0 && `Frete: ${fmt(valorPagar)}`}
+              {regiao && valorPagar > 0 && ajudante > 0 && ` + Ajudante: ${fmt(ajudante)}`}
+              {!regiao && veiculo.ag_ft === 'agregado' && 'Selecione a região'}
+              {veiculo.ag_ft === 'frota' && 'Frota própria'}
+              {!regiao && veiculo.ag_ft !== 'frota' && veiculo.ag_ft !== 'agregado' && ''}
             </div>
           </div>
         </div>
@@ -140,7 +147,7 @@ export default function Ordens() {
   const [freteData, setFreteData] = useState(null);
   const [freteLoading, setFreteLoading] = useState(false);
   const { toast, showToast } = useToast();
-  const { visivel, obrigatorio } = useParametros();
+  const { visivel, obrigatorio, params: parametros } = useParametros();
 
   const qs = new URLSearchParams();
   if (filtInicio) qs.set('data_inicio', filtInicio);
@@ -451,6 +458,8 @@ export default function Ordens() {
                 regiao={form.regiao}
                 freteData={freteData}
                 loading={freteLoading}
+                temAjudante={!!(form.ajudante_nome||'').trim()}
+                valorAjudante={parseFloat(parametros?.valor_ajudante) || 0}
               />
 
               {/* Campos configuráveis */}

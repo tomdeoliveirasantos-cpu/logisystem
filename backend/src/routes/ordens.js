@@ -143,6 +143,15 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
         const veiculo = vrows[0];
         const descBase = `Ordem ${numero_rota || ordem.id} - ${regiao || ''} - ${data}`;
 
+        // Buscar valor do ajudante nos parâmetros
+        let valorAjudante = 0;
+        if (ajudante_nome) {
+          const { rows: paramRows } = await db.query(
+            "SELECT valor FROM logi_parametros WHERE chave = 'valor_ajudante'"
+          );
+          if (paramRows.length) valorAjudante = parseFloat(paramRows[0].valor) || 0;
+        }
+
         if (veiculo.ag_ft === 'agregado') {
           // Frete agregado → paga para a transportadora com base na tabela de fretes
           let valorFrete = null;
@@ -153,12 +162,24 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
             if (fr.length) valorFrete = fr[0].valor_base;
           }
           if (valorFrete) {
+            // Frete agregado (valor base)
             await db.query(
               `INSERT INTO logi_contas_pagar
                 (ordem_id, tabela_frete_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
               [ordem.id, tabela_frete_id||null, veiculo.transportadora_id||null, motorista_id||null,
                valorFrete, data, `Frete agregado - ${veiculo.transportadora_nome||''} - ${descBase}`, 'frete_agregado']
+            );
+          }
+          // Ajudante (lançamento separado para clareza)
+          if (valorAjudante > 0 && ajudante_nome) {
+            await db.query(
+              `INSERT INTO logi_contas_pagar
+                (ordem_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [ordem.id, veiculo.transportadora_id||null, motorista_id||null,
+               valorAjudante, data,
+               `Ajudante - ${ajudante_nome} - ${descBase}`, 'diaria_ajudante']
             );
           }
         } else if (veiculo.ag_ft === 'frota') {
@@ -180,15 +201,15 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
                `Diária motorista - ${veiculo.motorista_nome||''} - ${descBase}`, 'diaria_motorista']
             );
           }
-          // Diária do ajudante (se informado)
-          if (valorDiaria && ajudante_nome) {
+          // Ajudante (lançamento separado)
+          if (valorAjudante > 0 && ajudante_nome) {
             await db.query(
               `INSERT INTO logi_contas_pagar
-                (ordem_id, tabela_frete_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-              [ordem.id, tabela_frete_id||null, motorista_id,
-               valorDiaria, data,
-               `Diária ajudante - ${ajudante_nome} - ${descBase}`, 'diaria_ajudante']
+                (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6)`,
+              [ordem.id, motorista_id||null,
+               valorAjudante, data,
+               `Ajudante - ${ajudante_nome} - ${descBase}`, 'diaria_ajudante']
             );
           }
         }

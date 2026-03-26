@@ -294,16 +294,41 @@ router.patch('/:id/status', async (req, res, next) => {
 router.post('/importar', async (req, res, next) => {
   try {
     const { data, rotas } = req.body;
-    // rotas = [{ numero_rota, motorista_id, veiculo_id, ajudante_nome, regiao, paradas: [{seq, pedido, cliente_nome, peso, nf, remessa, obs}] }]
 
     if (!data || !rotas?.length) return res.status(400).json({ error: 'Data e rotas são obrigatórios' });
 
+    // Coletar todos os pedidos para checar duplicidade de uma vez
+    const todosPedidos = [];
+    for (const rota of rotas) {
+      for (const parada of (rota.paradas || [])) {
+        if (parada.pedido) todosPedidos.push(String(parada.pedido));
+      }
+    }
+
+    // Buscar quais já existem no banco
+    let pedidosDuplicados = [];
+    if (todosPedidos.length) {
+      const placeholders = todosPedidos.map((_, i) => `$${i + 1}`).join(',');
+      const { rows: existentes } = await db.query(
+        `SELECT DISTINCT pedido FROM logi_ordens_transporte WHERE pedido IN (${placeholders})`,
+        todosPedidos
+      );
+      pedidosDuplicados = existentes.map(r => r.pedido);
+    }
+
     const criadas = [];
+    const ignoradas = [];
 
     for (const rota of rotas) {
       const { numero_rota, motorista_id, veiculo_id, ajudante_nome, tabela_frete_id } = rota;
 
       for (const parada of (rota.paradas || [])) {
+        // Pular se pedido já existe
+        if (parada.pedido && pedidosDuplicados.includes(String(parada.pedido))) {
+          ignoradas.push({ pedido: parada.pedido, cliente: parada.cliente_nome, rota: numero_rota });
+          continue;
+        }
+
         const { rows } = await db.query(
           `INSERT INTO logi_ordens_transporte
             (data, numero_rota, seq, pedido, cliente_nome, regiao, peso, nf, remessa, obs,
@@ -385,7 +410,7 @@ router.post('/importar', async (req, res, next) => {
       }
     }
 
-    res.status(201).json({ success: true, total: criadas.length, ordens: criadas });
+    res.status(201).json({ success: true, total: criadas.length, ignoradas: ignoradas.length, duplicados: ignoradas, ordens: criadas });
   } catch (err) { next(err); }
 });
 

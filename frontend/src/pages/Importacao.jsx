@@ -131,8 +131,16 @@ export default function Importacao() {
             <div style={{fontSize:15,fontWeight:700,color:'#16A34A',marginBottom:8}}>
               ✅ {resultado.total} ordens importadas com sucesso!
             </div>
+            {resultado.ignoradas > 0 && (
+              <div style={{fontSize:13,color:'#B45309',marginBottom:8,padding:'8px 12px',background:'#FEF3C7',borderRadius:'var(--radius)'}}>
+                ⚠️ <strong>{resultado.ignoradas} pedidos ignorados</strong> (já existem no sistema):
+                <div style={{fontSize:11,marginTop:4,color:'#92400E'}}>
+                  {resultado.duplicados.map(d => `Pedido ${d.pedido} (${d.cliente}, Rota ${d.rota})`).join(' | ')}
+                </div>
+              </div>
+            )}
             <div style={{fontSize:13,color:'#15803d',marginBottom:12}}>
-              Agora vá em Ordens de Transporte para atribuir motorista, veículo e região a cada rota.
+              Vá em Ordens de Transporte para atribuir motorista, veículo e região.
             </div>
             <div style={{display:'flex',gap:8}}>
               <a href="/ordens" className="btn btn-primary" style={{textDecoration:'none'}}>

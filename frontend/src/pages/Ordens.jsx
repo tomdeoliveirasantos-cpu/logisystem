@@ -367,7 +367,7 @@ export default function Ordens() {
       </div>
 
       <div className="page-body">
-        <div className="metrics-grid cols-4 mb-20 fade-up">
+        <div className="metrics-grid cols-4 metrics-compact fade-up" style={{marginBottom:12}}>
           {[
             {label:'Total',val:rows.length,cls:'',color:'var(--text)'},
             {label:'Entregues',val:rows.filter(r=>r.status==='entregue').length,cls:'green',color:'var(--green)'},
@@ -434,13 +434,32 @@ export default function Ordens() {
                     {visivel('anexo') && <td><AnexoCell ordem={r} /></td>}
                     <td><StatusBadge status={r.status} /></td>
                     <td>
-                      <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                      <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
                         <select className="form-select" style={{width:100,fontSize:11,padding:'4px 6px'}}
-                          value={r.status} onChange={e=>updateStatus(r.id,e.target.value)}>
+                          value={r.status} onChange={e=>{
+                            if (e.target.value === 'cancelado') {
+                              if (confirm('Cancelar esta ordem? Os lançamentos financeiros pendentes serão cancelados.')) {
+                                updateStatus(r.id, 'cancelado');
+                              } else {
+                                e.target.value = r.status;
+                              }
+                            } else {
+                              updateStatus(r.id, e.target.value);
+                            }
+                          }}>
                           {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                         <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>openModal(r)} title="Editar">✏️</button>
                         <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>showHistorico(r.id)} title="Histórico">🕐</button>
+                        {r.status !== 'cancelado' && (
+                          <button className="btn btn-danger btn-sm" style={{padding:'4px 8px',fontSize:10}}
+                            onClick={()=>{
+                              if (confirm('Cancelar esta ordem?\nOs lançamentos financeiros pendentes serão automaticamente cancelados.')) {
+                                updateStatus(r.id, 'cancelado');
+                              }
+                            }}
+                            title="Cancelar ordem">✕</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -466,14 +485,14 @@ export default function Ordens() {
                 </div>
               )}
 
-              {/* Linha 1: Data + campos configuráveis de identificação */}
-              <div className="form-grid cols-3" style={{marginBottom:14}}>
+              {/* Linha 1: Data + Rota + Seq — sempre em linha (campos curtos) */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:10,marginBottom:14}}>
                 <Field label={<span>Data <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Input type="date" value={form.data||today} onChange={e=>set('data',e.target.value)} />
                 </Field>
                 {visivel('numero_rota') && (
                   <FL label="Nº da Rota" obrig={obrigatorio('numero_rota')}>
-                    <Input type="number" value={form.numero_rota||''} onChange={e=>set('numero_rota',e.target.value)} placeholder="ex: 4800" />
+                    <Input type="number" value={form.numero_rota||''} onChange={e=>set('numero_rota',e.target.value)} placeholder="4800" />
                   </FL>
                 )}
                 {visivel('seq') && (

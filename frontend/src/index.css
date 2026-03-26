@@ -431,6 +431,12 @@ tbody tr:hover td { background: #F8FAFF; }
   .metrics-grid.cols-3 .metric-card { padding: 10px 12px; }
   .metric-value { font-size: 18px; }
 
+  /* KPIs compactos — 4 em linha no mobile */
+  .metrics-compact { grid-template-columns: repeat(4, 1fr) !important; gap: 6px !important; }
+  .metrics-compact .metric-card { padding: 8px 6px !important; text-align: center; }
+  .metrics-compact .metric-label { font-size: 9px !important; margin-bottom: 2px; }
+  .metrics-compact .metric-value { font-size: 15px !important; }
+
   .form-grid.cols-2,
   .form-grid.cols-3 { grid-template-columns: 1fr; gap: 10px; }
 

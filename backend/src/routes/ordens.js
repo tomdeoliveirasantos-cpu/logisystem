@@ -195,6 +195,32 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
       }
     }
 
+    // ── Geração automática de Contas a Receber (frete fixo por veículo) ──
+    if (veiculo_id) {
+      try {
+        const { rows: vr } = await db.query('SELECT tipo FROM logi_veiculos WHERE id = $1', [veiculo_id]);
+        if (vr.length) {
+          const tipoVeiculo = vr[0].tipo;
+          const { rows: fr } = await db.query(
+            'SELECT valor FROM logi_tabela_frete_recebido WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))',
+            [tipoVeiculo]
+          );
+          if (fr.length && fr[0].valor) {
+            await db.query(
+              `INSERT INTO logi_contas_receber
+                (ordem_id, cliente, valor, vencimento, obs)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [ordem.id, cliente_nome || 'Léo Madeiras',
+               fr[0].valor, data,
+               `Frete recebido - ${tipoVeiculo} - Rota ${numero_rota || ordem.id} - ${regiao || ''}`]
+            );
+          }
+        }
+      } catch (recErr) {
+        console.error('Erro ao gerar conta a receber:', recErr.message);
+      }
+    }
+
     res.status(201).json(ordem);
   } catch (err) { next(err); }
 });

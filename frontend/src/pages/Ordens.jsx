@@ -1,5 +1,5 @@
 /* global URLSearchParams */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';
 import { api } from '../lib/api';
@@ -11,6 +11,8 @@ const STATUS_OPTS = [
   {value:'devolucao',label:'Devolução'},
   {value:'cancelado',label:'Cancelado'},
 ];
+
+const fmt = v => v !== null && v !== undefined ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : '—';
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -80,15 +82,63 @@ function FL({ label, obrig, children }) {
   );
 }
 
+// ════ Card de resumo do frete (exibido no modal) ═════════════════════════════
+function FreteResumo({ veiculo, regiao, freteData, loading }) {
+  if (!veiculo) return null;
+
+  return (
+    <div style={{
+      padding: '14px 16px', background: 'var(--bg2)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', marginBottom: 14,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
+        💰 Valores de Frete (automático)
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12, color: 'var(--text3)' }}>Buscando valores...</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ padding: '10px 12px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 'var(--radius)' }}>
+            <div style={{ fontSize: 10, color: '#16A34A', fontWeight: 600, marginBottom: 4 }}>RECEBER (Léo Madeiras)</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#16A34A' }}>
+              {freteData?.receber ? fmt(freteData.receber.valor) : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+              Fixo por veículo: {veiculo.tipo}
+            </div>
+          </div>
+          <div style={{ padding: '10px 12px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 'var(--radius)' }}>
+            <div style={{ fontSize: 10, color: '#B45309', fontWeight: 600, marginBottom: 4 }}>PAGAR (Agregado)</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#B45309' }}>
+              {freteData?.pagar ? fmt(freteData.pagar.valor_base) : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+              {regiao ? `Região: ${regiao}` : 'Preencha a região'}
+              {veiculo.ag_ft === 'frota' && ' (frota própria — sem frete agregado)'}
+            </div>
+          </div>
+        </div>
+      )}
+      {!regiao && veiculo.ag_ft === 'agregado' && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', fontStyle: 'italic' }}>
+          Preencha a região para calcular o frete a pagar automaticamente.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Ordens() {
   const today = new Date().toISOString().split('T')[0];
   const [filtInicio, setFiltInicio] = useState('');
   const [filtFim, setFiltFim]       = useState('');
   const [filtStatus, setFiltStatus] = useState('pendente');
   const [modal, setModal] = useState(false);
-  const [form, setForm]   = useState({});
+  const [form, setForm]   = useState({ data: today });
   const [anexo, setAnexo] = useState(null);
   const [formError, setFormError] = useState('');
+  const [freteData, setFreteData] = useState(null);
+  const [freteLoading, setFreteLoading] = useState(false);
   const { toast, showToast } = useToast();
   const { visivel, obrigatorio } = useParametros();
 
@@ -101,16 +151,36 @@ export default function Ordens() {
   const { data: clientes }           = useFetch('/clientes');
   const { data: motoristas }         = useFetch('/motoristas');
   const { data: veiculos }           = useFetch('/veiculos');
-  const { data: fretes }             = useFetch('/financeiro/fretes?tipo_frete=recebido');
 
-  // Detecta se o veículo selecionado é frota própria
-  const veiculoSelecionado = (veiculos||[]).find(v => v.id === form.veiculo_id);
-  const isFrotaPropria = veiculoSelecionado?.ag_ft === 'frota';
+  // Veículo selecionado
+  const veiculoSelecionado = useMemo(
+    () => (veiculos||[]).find(v => String(v.id) === String(form.veiculo_id)),
+    [veiculos, form.veiculo_id]
+  );
+
+  // Buscar frete automaticamente quando veículo ou região mudam
+  useEffect(() => {
+    if (!veiculoSelecionado) { setFreteData(null); return; }
+
+    const tipoVeiculo = veiculoSelecionado.tipo;
+    const regiao = (form.regiao || '').trim();
+
+    if (!tipoVeiculo) return;
+
+    setFreteLoading(true);
+    const params = new URLSearchParams({ tipo_veiculo: tipoVeiculo });
+    if (regiao) params.set('regiao', regiao);
+
+    api.get(`/financeiro/fretes/buscar?${params}`)
+      .then(data => setFreteData(data))
+      .catch(() => setFreteData(null))
+      .finally(() => setFreteLoading(false));
+  }, [veiculoSelecionado, form.regiao]);
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const onClienteChange = (id) => {
     set('cliente_id',id);
-    const cli=(clientes||[]).find(c=>c.id===id);
+    const cli=(clientes||[]).find(c=>String(c.id)===String(id));
     if(cli) set('cliente_nome',cli.nome);
   };
 
@@ -125,7 +195,6 @@ export default function Ordens() {
     if (visivel('nf') && obrigatorio('nf') && !form.nf) erros.push('NF');
     if (visivel('peso') && obrigatorio('peso') && !form.peso) erros.push('Peso');
     if (visivel('remessa') && obrigatorio('remessa') && !form.remessa) erros.push('Remessa');
-    if (visivel('tarifa') && obrigatorio('tarifa') && !form.tabela_frete_id) erros.push('Tarifa aplicada');
     if (visivel('ajuda_diesel') && obrigatorio('ajuda_diesel') && !form.ajuda_diesel) erros.push('Ajuda Diesel');
     if (visivel('taxa_descarga') && obrigatorio('taxa_descarga') && !form.taxa_descarga) erros.push('Taxa Descarga');
     if (visivel('obs') && obrigatorio('obs') && !form.obs) erros.push('Observações');
@@ -139,14 +208,13 @@ export default function Ordens() {
     setFormError('');
     try {
       const fd = new FormData();
-      fd.append('data', form.data||today);
+      fd.append('data', form.data);
       if(visivel('numero_rota')) fd.append('numero_rota', form.numero_rota||'');
       if(visivel('seq')) fd.append('seq', form.seq||1);
       if(form.cliente_id) fd.append('cliente_id',form.cliente_id);
       if(form.cliente_nome) fd.append('cliente_nome',form.cliente_nome);
       if(form.motorista_id) fd.append('motorista_id',form.motorista_id);
       if(form.veiculo_id) fd.append('veiculo_id',form.veiculo_id);
-      if(form.tabela_frete_id) fd.append('tabela_frete_id',form.tabela_frete_id);
       if(form.ajudante_nome) fd.append('ajudante_nome',form.ajudante_nome);
       if(form.regiao) fd.append('regiao',form.regiao);
       if(form.tipo) fd.append('tipo',form.tipo);
@@ -159,16 +227,35 @@ export default function Ordens() {
       fd.append('taxa_descarga', visivel('taxa_descarga') ? (form.taxa_descarga||0) : 0);
       fd.append('status', form.status||'pendente');
       if(visivel('anexo') && anexo) fd.append('anexo',anexo);
+
+      // Passa o ID da tarifa agregado se encontrou
+      if (freteData?.pagar?.id) fd.append('tabela_frete_id', freteData.pagar.id);
+
       const token = localStorage.getItem('logi_token');
       const res = await fetch('https://api.wsdevsoft.com/api/ordens',{method:'POST',body:fd,headers:{Authorization:`Bearer ${token}`}});
       if(!res.ok) throw new Error('Erro ao salvar');
-      showToast('Ordem criada!'); refetch(); setModal(false); setForm({}); setAnexo(null);
+      showToast('Ordem criada com sucesso!'); refetch(); setModal(false); setForm({ data: today }); setAnexo(null); setFreteData(null);
     } catch(e) { showToast(e.message,'error'); }
   };
 
   const updateStatus = async (id,status) => {
     try { await api.patch(`/ordens/${id}/status`,{status}); showToast('Status atualizado!'); refetch(); }
     catch(e) { showToast(e.message,'error'); }
+  };
+
+  const openModal = () => {
+    setForm({ data: today });
+    setAnexo(null);
+    setFormError('');
+    setFreteData(null);
+    setModal(true);
+  };
+
+  const closeModal = () => {
+    setModal(false);
+    setForm({ data: today });
+    setAnexo(null);
+    setFreteData(null);
   };
 
   const rows = data||[];
@@ -197,7 +284,7 @@ export default function Ordens() {
             <button className="btn btn-ghost btn-sm" onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');}}>✕</button>
           )}
           <button className="btn btn-ghost" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
-          <button className="btn btn-primary" onClick={()=>{setForm({});setAnexo(null);setFormError('');setModal(true);}}>+ Nova Ordem</button>
+          <button className="btn btn-primary" onClick={openModal}>+ Nova Ordem</button>
         </div>
       </div>
 
@@ -234,7 +321,6 @@ export default function Ordens() {
                   <th>Região</th>
                   {visivel('peso') && <th>Peso</th>}
                   {visivel('nf') && <th>NF</th>}
-                  {visivel('tarifa') && <th>Tarifa</th>}
                   {visivel('anexo') && <th>Anexo</th>}
                   <th>Status</th>
                   <th>Ação</th>
@@ -267,7 +353,6 @@ export default function Ordens() {
                     <td style={{fontSize:12}}>{r.regiao||'—'}</td>
                     {visivel('peso') && <td style={{fontSize:12}}>{r.peso?Number(r.peso).toLocaleString('pt-BR')+' kg':'—'}</td>}
                     {visivel('nf') && <td className="font-mono" style={{fontSize:11}}>{r.nf||'—'}</td>}
-                    {visivel('tarifa') && <td style={{fontSize:11,color:'var(--green)'}}>{r.frete_referencia?`R$ ${Number(r.frete_referencia).toFixed(2)}`:'—'}</td>}
                     {visivel('anexo') && <td><AnexoCell ordem={r} /></td>}
                     <td><StatusBadge status={r.status} /></td>
                     <td>
@@ -286,11 +371,11 @@ export default function Ordens() {
 
       {/* Modal Nova Ordem */}
       {modal && (
-        <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&(setModal(false),setForm({}),setAnexo(null))}>
+        <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div className="modal" style={{maxWidth:700}}>
             <div className="modal-header">
               <span className="modal-title">Nova Ordem de Transporte</span>
-              <button className="modal-close" onClick={()=>{setModal(false);setForm({});setAnexo(null);}}>×</button>
+              <button className="modal-close" onClick={closeModal}>×</button>
             </div>
             <div className="modal-body">
               {formError && (
@@ -316,7 +401,7 @@ export default function Ordens() {
                 )}
               </div>
 
-              {/* Linha 2: Cliente, Motorista, Veículo */}
+              {/* Linha 2: Cliente */}
               <div className="form-grid cols-2" style={{marginBottom:14}}>
                 <div style={{gridColumn:'span 2'}}>
                   <Field label={<span>Cliente <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
@@ -325,6 +410,8 @@ export default function Ordens() {
                     </Select>
                   </Field>
                 </div>
+
+                {/* Motorista + Ajudante */}
                 <Field label={<span>Motorista <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Select value={form.motorista_id||''} onChange={e=>set('motorista_id',e.target.value)}
                     options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
@@ -336,13 +423,17 @@ export default function Ordens() {
                     placeholder="Nome do ajudante (opcional)"
                   />
                 </Field>
+
+                {/* Veículo + Região */}
                 <Field label={<span>Veículo <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
-                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🤝 Agregado'}`}))} />
+                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚛 Agregado'}`}))} />
                 </Field>
-                <Field label="Região">
-                  <Input value={form.regiao||''} onChange={e=>set('regiao',e.target.value)} placeholder="ex: Zona Sul" />
+                <Field label={<span>Região <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(define frete)</span></span>}>
+                  <Input value={form.regiao||''} onChange={e=>set('regiao',e.target.value)} placeholder="ex: ZONA SUL, OSASCO, ATIBAIA" />
                 </Field>
+
+                {/* Tipo + Pedido */}
                 <Field label="Tipo">
                   <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
                     options={['SOROCABA','INTEIRO','CORTE','AGREGADO'].map(v=>({value:v,label:v}))} />
@@ -350,8 +441,18 @@ export default function Ordens() {
                 <Field label="Pedido">
                   <Input value={form.pedido||''} onChange={e=>set('pedido',e.target.value)} />
                 </Field>
+              </div>
 
-                {/* Campos configuráveis */}
+              {/* ════ Card de resumo de frete ════ */}
+              <FreteResumo
+                veiculo={veiculoSelecionado}
+                regiao={form.regiao}
+                freteData={freteData}
+                loading={freteLoading}
+              />
+
+              {/* Campos configuráveis */}
+              <div className="form-grid cols-2" style={{marginBottom:14}}>
                 {visivel('nf') && (
                   <FL label="NF" obrig={obrigatorio('nf')}>
                     <Input value={form.nf||''} onChange={e=>set('nf',e.target.value)} />
@@ -366,14 +467,6 @@ export default function Ordens() {
                   <FL label="Remessa" obrig={obrigatorio('remessa')}>
                     <Input value={form.remessa||''} onChange={e=>set('remessa',e.target.value)} />
                   </FL>
-                )}
-                {visivel('tarifa') && (
-                  <div style={{gridColumn:'span 2'}}>
-                    <FL label="Tarifa aplicada" obrig={obrigatorio('tarifa')}>
-                      <Select value={form.tabela_frete_id||''} onChange={e=>set('tabela_frete_id',e.target.value)}
-                        options={(fretes||[]).map(f=>({value:f.id,label:`${f.regiao} — ${f.tipo_veiculo} — R$ ${Number(f.valor_base).toFixed(2)}`}))} />
-                    </FL>
-                  </div>
                 )}
                 {visivel('ajuda_diesel') && (
                   <FL label="Ajuda Diesel (R$)" obrig={obrigatorio('ajuda_diesel')}>
@@ -406,7 +499,7 @@ export default function Ordens() {
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={()=>{setModal(false);setForm({});setAnexo(null);}}>Cancelar</button>
+              <button className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
               <button className="btn btn-primary" onClick={save}>Salvar Ordem</button>
             </div>
           </div>

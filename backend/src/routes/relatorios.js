@@ -280,4 +280,76 @@ router.get('/km-por-veiculo', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/relatorios/km-por-regiao?mes=2026-03
+router.get('/km-por-regiao', async (req, res, next) => {
+  try {
+    const { mes } = req.query;
+    const like = mes ? `${mes}%` : `${new Date().toISOString().slice(0,7)}%`;
+    const { rows } = await db.query(
+      `SELECT o.regiao,
+              COUNT(o.id) AS viagens,
+              COALESCE(SUM(o.km_chegada - o.km_saida), 0) AS km_total,
+              COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio,
+              COALESCE(MIN(o.km_chegada - o.km_saida), 0) AS km_min,
+              COALESCE(MAX(o.km_chegada - o.km_saida), 0) AS km_max,
+              COALESCE(SUM(cr.valor), 0) AS faturado,
+              CASE WHEN COALESCE(SUM(o.km_chegada - o.km_saida), 0) > 0
+                THEN ROUND(COALESCE(SUM(cr.valor), 0) / SUM(o.km_chegada - o.km_saida), 2)
+                ELSE 0 END AS receita_por_km
+       FROM logi_ordens_transporte o
+       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.status != 'cancelado'
+       WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
+         AND o.regiao IS NOT NULL AND o.status != 'cancelado'
+       GROUP BY o.regiao
+       ORDER BY km_total DESC`,
+      [like]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/km-por-motorista?mes=2026-03
+router.get('/km-por-motorista', async (req, res, next) => {
+  try {
+    const { mes } = req.query;
+    const like = mes ? `${mes}%` : `${new Date().toISOString().slice(0,7)}%`;
+    const { rows } = await db.query(
+      `SELECT m.nome AS motorista,
+              COUNT(o.id) AS viagens,
+              COALESCE(SUM(o.km_chegada - o.km_saida), 0) AS km_total,
+              COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio,
+              COUNT(DISTINCT o.regiao) AS regioes_atendidas
+       FROM logi_ordens_transporte o
+       JOIN logi_motoristas m ON m.id = o.motorista_id
+       WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
+         AND o.status != 'cancelado'
+       GROUP BY m.nome
+       ORDER BY km_total DESC`,
+      [like]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/km-evolucao-diaria?mes=2026-03
+router.get('/km-evolucao-diaria', async (req, res, next) => {
+  try {
+    const { mes } = req.query;
+    const like = mes ? `${mes}%` : `${new Date().toISOString().slice(0,7)}%`;
+    const { rows } = await db.query(
+      `SELECT o.data,
+              COUNT(o.id) AS viagens,
+              COALESCE(SUM(o.km_chegada - o.km_saida), 0) AS km_total,
+              COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio
+       FROM logi_ordens_transporte o
+       WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
+         AND o.status != 'cancelado'
+       GROUP BY o.data
+       ORDER BY o.data`,
+      [like]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

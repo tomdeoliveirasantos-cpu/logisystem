@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Cell,
 } from 'recharts';
 
 const fmt = v => v !== null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 }).format(v) : '—';
+const fmtKm = v => v !== null ? Number(v).toFixed(0) + ' km' : '—';
 
 const COLORS = { TRUCK: '#4f6ef7', TOCO: '#14b8a6', IVECO: '#f59e0b', '3/4': '#22c55e', HR: '#a855f7' };
 
@@ -16,8 +17,20 @@ export default function Relatorios() {
   const { data: fat }  = useFetch(`/relatorios/faturamento?mes=${mes}`, [mes]);
   const { data: cpR }  = useFetch('/relatorios/contas-pagar-resumo');
   const { data: crR }  = useFetch('/relatorios/contas-receber-resumo');
+  const { data: kmVeiculo } = useFetch(`/relatorios/km-por-veiculo?mes=${mes}`, [mes]);
+  const { data: kmRegiao } = useFetch(`/relatorios/km-por-regiao?mes=${mes}`, [mes]);
+  const { data: kmMotorista } = useFetch(`/relatorios/km-por-motorista?mes=${mes}`, [mes]);
+  const { data: kmEvolucao } = useFetch(`/relatorios/km-evolucao-diaria?mes=${mes}`, [mes]);
 
   const fatRows = fat || [];
+  const kmEvoRows = (kmEvolucao || []).map(r => ({
+    dia: r.data ? r.data.substring(8,10) : '',
+    km: Number(r.km_total) || 0,
+    viagens: Number(r.viagens) || 0,
+  }));
+
+  const totalKmMes = (kmVeiculo || []).reduce((s,r) => s + Number(r.km_total), 0);
+  const totalViagensMes = (kmVeiculo || []).reduce((s,r) => s + Number(r.viagens), 0);
 
   return (
     <div>
@@ -30,13 +43,22 @@ export default function Relatorios() {
       </div>
 
       <div className="page-body">
-        <div className="tabs">
+        <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--border)',flexWrap:'wrap'}}>
           {[
             { id: 'faturamento', label: 'Faturamento' },
+            { id: 'km',          label: 'KM & Rotas' },
             { id: 'pagar',       label: 'Contas a Pagar' },
             { id: 'receber',     label: 'Contas a Receber' },
           ].map(t => (
-            <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{
+                padding:'10px 16px', border:'none', cursor:'pointer',
+                fontSize:13, fontWeight:600, fontFamily:'inherit',
+                background:'transparent',
+                color: tab === t.id ? 'var(--accent)' : 'var(--text3)',
+                borderBottom: tab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+                marginBottom:-2, transition:'all .15s',
+              }}>
               {t.label}
             </button>
           ))}
@@ -149,6 +171,126 @@ export default function Relatorios() {
             </div>
           </div>
         )}
+        {tab === 'km' && (
+          <div>
+            {/* KPIs de KM */}
+            <div className="metrics-grid cols-4 mb-16 fade-up">
+              <div className="metric-card">
+                <div className="metric-label">KM Total (mês)</div>
+                <div className="metric-value" style={{fontSize:18}}>{totalKmMes.toLocaleString('pt-BR')} km</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Viagens com KM</div>
+                <div className="metric-value">{totalViagensMes}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">KM Médio/viagem</div>
+                <div className="metric-value" style={{fontSize:18}}>{totalViagensMes > 0 ? (totalKmMes / totalViagensMes).toFixed(0) : 0} km</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Regiões atendidas</div>
+                <div className="metric-value">{(kmRegiao||[]).length}</div>
+              </div>
+            </div>
+
+            {/* Gráfico evolução diária KM */}
+            {kmEvoRows.length > 0 && (
+              <div className="card fade-up fade-up-1 mb-16">
+                <div className="section-title mb-12">Evolução diária de KM</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={kmEvoRows} margin={{top:4,right:4,left:-20,bottom:0}}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+                    <XAxis dataKey="dia" tick={{fontSize:10,fill:'var(--text3)'}} axisLine={false} tickLine={false}/>
+                    <YAxis tick={{fontSize:10,fill:'var(--text3)'}} axisLine={false} tickLine={false} tickFormatter={v=>v+' km'}/>
+                    <Tooltip formatter={v => [v + ' km']} contentStyle={{background:'var(--bg2)',border:'1px solid var(--border)',fontSize:12}}/>
+                    <Line type="monotone" dataKey="km" stroke="var(--accent)" strokeWidth={2} dot={{r:3}} name="KM"/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* KM por Região — principal para otimização de rotas */}
+            <div className="card fade-up fade-up-1 mb-16">
+              <div className="section-title mb-12">KM por Região — Eficiência de Rotas</div>
+              <div style={{padding:'8px 12px',background:'var(--accent-lt)',borderRadius:'var(--radius)',marginBottom:12,fontSize:12,color:'var(--accent)'}}>
+                Regiões com KM médio alto e receita/km baixa podem indicar rotas que precisam ser otimizadas.
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Região</th><th>Viagens</th><th>KM Total</th><th>KM Médio</th><th>KM Mín</th><th>KM Máx</th><th>Faturado</th><th>R$/km</th></tr></thead>
+                  <tbody>
+                    {!(kmRegiao||[]).length && (
+                      <tr><td colSpan={8} style={{textAlign:'center',color:'var(--text3)',padding:'24px 0',fontSize:13}}>
+                        Nenhum dado de KM registrado neste mês. Preencha KM Saída/Chegada nas ordens.
+                      </td></tr>
+                    )}
+                    {(kmRegiao||[]).map(r => (
+                      <tr key={r.regiao}>
+                        <td className="fw-500" style={{fontSize:12}}>{r.regiao}</td>
+                        <td>{r.viagens}</td>
+                        <td className="fw-600">{Number(r.km_total).toLocaleString('pt-BR')} km</td>
+                        <td>{Number(r.km_medio).toFixed(0)} km</td>
+                        <td style={{fontSize:11,color:'var(--text3)'}}>{Number(r.km_min).toFixed(0)} km</td>
+                        <td style={{fontSize:11,color:'var(--text3)'}}>{Number(r.km_max).toFixed(0)} km</td>
+                        <td style={{color:'var(--green)'}}>{fmt(r.faturado)}</td>
+                        <td>
+                          <span className={`badge ${Number(r.receita_por_km) >= 5 ? 'badge-green' : Number(r.receita_por_km) >= 3 ? 'badge-amber' : 'badge-red'}`}>
+                            R$ {Number(r.receita_por_km).toFixed(2)}/km
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))',gap:16}}>
+              {/* KM por Veículo */}
+              <div className="card fade-up fade-up-2">
+                <div className="section-title mb-12">KM por Veículo</div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Veículo</th><th>Tipo</th><th>Viagens</th><th>KM Total</th><th>KM Médio</th></tr></thead>
+                    <tbody>
+                      {(kmVeiculo||[]).map(r => (
+                        <tr key={r.placa}>
+                          <td className="font-mono fw-500">{r.placa}</td>
+                          <td><span className="badge badge-teal">{r.tipo}</span></td>
+                          <td>{r.viagens}</td>
+                          <td className="fw-600">{Number(r.km_total).toLocaleString('pt-BR')} km</td>
+                          <td>{Number(r.km_medio).toFixed(0)} km</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* KM por Motorista */}
+              <div className="card fade-up fade-up-2">
+                <div className="section-title mb-12">KM por Motorista</div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Motorista</th><th>Viagens</th><th>KM Total</th><th>KM Médio</th><th>Regiões</th></tr></thead>
+                    <tbody>
+                      {(kmMotorista||[]).map(r => (
+                        <tr key={r.motorista}>
+                          <td className="fw-500">{r.motorista}</td>
+                          <td>{r.viagens}</td>
+                          <td className="fw-600">{Number(r.km_total).toLocaleString('pt-BR')} km</td>
+                          <td>{Number(r.km_medio).toFixed(0)} km</td>
+                          <td>{r.regioes_atendidas}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

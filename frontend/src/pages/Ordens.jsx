@@ -485,22 +485,22 @@ export default function Ordens() {
                 </div>
               )}
 
-              {/* Linha 1: Data + Rota + Seq na mesma linha */}
-              <div style={{display:'flex',gap:8,marginBottom:14}}>
-                <div style={{flex:'1 1 45%',minWidth:0}}>
+              {/* Linha 1: Data + Rota + Seq */}
+              <div style={{display:'flex',gap:8,marginBottom:14,alignItems:'flex-end'}}>
+                <div style={{width:150,flexShrink:0}}>
                   <Field label={<span>Data <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                    <Input type="date" value={form.data||today} onChange={e=>set('data',e.target.value)} style={{textAlign:'left'}} />
+                    <Input type="date" value={form.data||today} onChange={e=>set('data',e.target.value)} />
                   </Field>
                 </div>
                 {visivel('numero_rota') && (
-                  <div style={{flex:'1 1 35%',minWidth:0}}>
+                  <div style={{flex:1,minWidth:0}}>
                     <FL label="Rota" obrig={obrigatorio('numero_rota')}>
                       <Input type="number" value={form.numero_rota||''} onChange={e=>set('numero_rota',e.target.value)} placeholder="4800" />
                     </FL>
                   </div>
                 )}
                 {visivel('seq') && (
-                  <div style={{flex:'0 0 60px'}}>
+                  <div style={{width:56,flexShrink:0}}>
                     <FL label="Seq." obrig={obrigatorio('seq')}>
                       <Input type="number" value={form.seq||1} onChange={e=>set('seq',e.target.value)} min={1} />
                     </FL>

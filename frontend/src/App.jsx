@@ -11,6 +11,7 @@ import Relatorios from './pages/Relatorios';
 import Usuarios from './pages/Usuarios';
 import Parametros from './pages/Parametros';
 import TabelaFretesPage from './pages/TabelaFretes';
+import Romaneio from './pages/Romaneio';
 import {
   ContasReceber, ContasPagar,
   Manutencoes, Multas, Veiculos, Motoristas,
@@ -141,6 +142,7 @@ function ProtectedApp() {
             <Route path="/pagar" element={podeAcessar('financeiro') ? <ContasPagar /> : <Navigate to="/" />} />
             <Route path="/fretes" element={podeAcessar('financeiro') ? <TabelaFretesPage /> : <Navigate to="/" />} />
             <Route path="/relatorios" element={podeAcessar('relatorios') ? <Relatorios /> : <Navigate to="/" />} />
+            <Route path="/romaneio" element={podeAcessar('relatorios') ? <Romaneio /> : <Navigate to="/" />} />
             <Route path="/usuarios" element={podeAcessar('usuarios') ? <Usuarios /> : <Navigate to="/" />} />
             <Route path="/parametros" element={podeAcessar('usuarios') ? <Parametros /> : <Navigate to="/" />} />
           </Routes>

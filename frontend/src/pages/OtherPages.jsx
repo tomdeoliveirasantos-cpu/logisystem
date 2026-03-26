@@ -204,22 +204,57 @@ export function Veiculos() {
   const { data, loading, refetch } = useFetch('/veiculos');
   const { data: transportadoras } = useFetch('/transportadoras');
   const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm]   = useState({});
   const { toast, showToast } = useToast();
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const save=async()=>{ try{await api.post('/veiculos',form);showToast('Veículo cadastrado!');refetch();setModal(false);setForm({});}catch(e){showToast(e.message,'error');}};
+
+  const open = (row=null) => {
+    setEditing(row);
+    setForm(row ? { placa:row.placa, tipo:row.tipo, modelo:row.modelo, ano:row.ano, renavam:row.renavam, ag_ft:row.ag_ft, transportadora_id:row.transportadora_id } : {});
+    setModal(true);
+  };
+  const close = () => { setModal(false); setEditing(null); setForm({}); };
+
+  const save = async () => {
+    try {
+      if (editing) await api.put(`/veiculos/${editing.id}`, form);
+      else await api.post('/veiculos', form);
+      showToast(editing ? 'Veículo atualizado!' : 'Veículo cadastrado!');
+      refetch(); close();
+    } catch(e) { showToast(e.message,'error'); }
+  };
+
+  const desativar = async (id) => {
+    if (!confirm('Desativar este veículo?')) return;
+    try { await api.patch(`/veiculos/${id}/desativar`,{}); showToast('Veículo desativado'); refetch(); }
+    catch(e) { showToast(e.message,'error'); }
+  };
+
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e agregados</div></div><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Cadastrar Veículo</button></div>
+      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e agregados</div></div><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Veículo</button></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
-        <thead><tr><th>Placa</th><th>Tipo</th><th>Modelo</th><th>Ano</th><th>RENAVAM</th><th>Transportadora</th><th>Ag/Ft</th></tr></thead>
+        <thead><tr><th>Placa</th><th>Tipo</th><th>Modelo</th><th>Ano</th><th>RENAVAM</th><th>Transportadora</th><th>Ag/Ft</th><th></th></tr></thead>
         <tbody>
-          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:7}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
-          {rows.map(r=>(<tr key={r.id}><td className="font-mono fw-500">{r.placa}</td><td><span className="badge badge-teal">{r.tipo}</span></td><td>{r.modelo||'—'}</td><td style={{fontSize:12}}>{r.ano||'—'}</td><td className="font-mono" style={{fontSize:11}}>{r.renavam||'—'}</td><td style={{fontSize:12}}>{r.transportadora_nome||'—'}</td><td><StatusBadge status={r.ag_ft}/></td></tr>))}
+          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
+          {rows.map(r=>(<tr key={r.id}>
+            <td className="font-mono fw-500">{r.placa}</td>
+            <td><span className="badge badge-teal">{r.tipo}</span></td>
+            <td>{r.modelo||'—'}</td>
+            <td style={{fontSize:12}}>{r.ano||'—'}</td>
+            <td className="font-mono" style={{fontSize:11}}>{r.renavam||'—'}</td>
+            <td style={{fontSize:12}}>{r.transportadora_nome||'—'}</td>
+            <td><StatusBadge status={r.ag_ft}/></td>
+            <td><div style={{display:'flex',gap:4}}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>open(r)}>Editar</button>
+              <button className="btn btn-danger btn-sm" onClick={()=>desativar(r.id)}>✕</button>
+            </div></td>
+          </tr>))}
         </tbody>
       </table></div></div></div>
-      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&setModal(false)}><div className="modal" style={{maxWidth:520}}><div className="modal-header"><span className="modal-title">Cadastrar Veículo</span><button className="modal-close" onClick={()=>setModal(false)}>×</button></div><div className="modal-body"><div className="form-grid cols-2"><Field label="Placa *"><Input value={form.placa||''} onChange={e=>set('placa',e.target.value.toUpperCase())} placeholder="AAA0A00"/></Field><Field label="Tipo *"><Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)} options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v}))}/></Field><Field label="Modelo"><Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/></Field><Field label="Ano"><Input type="number" value={form.ano||''} onChange={e=>set('ano',e.target.value)} placeholder="2022"/></Field><Field label="RENAVAM"><Input value={form.renavam||''} onChange={e=>set('renavam',e.target.value)}/></Field><Field label="Ag / Frota *"><Select value={form.ag_ft||''} onChange={e=>set('ag_ft',e.target.value)} options={[{value:'frota',label:'Frota própria'},{value:'agregado',label:'Agregado'}]}/></Field><div style={{gridColumn:'span 2'}}><Field label="Transportadora"><Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)} options={(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))}/></Field></div></div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={()=>setModal(false)}>Cancelar</button><button className="btn btn-primary" onClick={save}>Cadastrar</button></div></div></div>)}
+      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}><div className="modal" style={{maxWidth:520}}><div className="modal-header"><span className="modal-title">{editing?'Editar Veículo':'Cadastrar Veículo'}</span><button className="modal-close" onClick={close}>×</button></div><div className="modal-body"><div className="form-grid cols-2"><Field label="Placa *"><Input value={form.placa||''} onChange={e=>set('placa',e.target.value.toUpperCase())} placeholder="AAA0A00"/></Field><Field label="Tipo *"><Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)} options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v}))}/></Field><Field label="Modelo"><Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/></Field><Field label="Ano"><Input type="number" value={form.ano||''} onChange={e=>set('ano',e.target.value)} placeholder="2022"/></Field><Field label="RENAVAM"><Input value={form.renavam||''} onChange={e=>set('renavam',e.target.value)}/></Field><Field label="Ag / Frota *"><Select value={form.ag_ft||''} onChange={e=>set('ag_ft',e.target.value)} options={[{value:'frota',label:'Frota própria'},{value:'agregado',label:'Agregado'}]}/></Field><div style={{gridColumn:'span 2'}}><Field label="Transportadora"><Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)} options={(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))}/></Field></div></div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={close}>Cancelar</button><button className="btn btn-primary" onClick={save}>{editing?'Salvar':'Cadastrar'}</button></div></div></div>)}
       {toast&&<Toast {...toast}/>}
     </div>
   );

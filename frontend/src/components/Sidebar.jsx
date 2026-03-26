@@ -42,6 +42,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       items: [
         { to: '/',           icon: '📊', label: 'Dashboard',  mod: 'relatorios' },
         { to: '/relatorios', icon: '📈', label: 'Relatórios', mod: 'relatorios' },
+        { to: '/romaneio',  icon: '🖨️', label: 'Romaneio',   mod: 'relatorios' },
       ],
     },
     {

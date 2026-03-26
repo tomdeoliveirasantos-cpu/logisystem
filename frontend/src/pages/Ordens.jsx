@@ -139,6 +139,7 @@ export default function Ordens() {
   const [filtInicio, setFiltInicio] = useState('');
   const [filtFim, setFiltFim]       = useState('');
   const [filtStatus, setFiltStatus] = useState('pendente');
+  const [filtBusca, setFiltBusca]   = useState('');
   const [modal, setModal] = useState(false);
   const [form, setForm]   = useState({ data: today });
   const [anexo, setAnexo] = useState(null);
@@ -329,6 +330,17 @@ export default function Ordens() {
   let rows = data||[];
   if (filtMotorista) rows = rows.filter(r => String(r.motorista_id) === String(filtMotorista));
   if (filtVeiculo) rows = rows.filter(r => String(r.veiculo_id) === String(filtVeiculo));
+  if (filtBusca) {
+    const b = filtBusca.toLowerCase();
+    rows = rows.filter(r =>
+      (r.cliente_nome||'').toLowerCase().includes(b) ||
+      (r.motorista_nome||'').toLowerCase().includes(b) ||
+      (r.regiao||'').toLowerCase().includes(b) ||
+      (r.placa||'').toLowerCase().includes(b) ||
+      (r.nf||'').toLowerCase().includes(b) ||
+      String(r.numero_rota||'').includes(b)
+    );
+  }
 
   return (
     <div>
@@ -339,7 +351,7 @@ export default function Ordens() {
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           <div className="search-bar">
             <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            <input placeholder="Buscar..." />
+            <input placeholder="Buscar..." value={filtBusca} onChange={e=>setFiltBusca(e.target.value)} />
           </div>
           <div style={{display:'flex',alignItems:'center',gap:4}}>
             <input type="date" className="form-input" style={{width:140}} value={filtInicio} onChange={e=>setFiltInicio(e.target.value)} />
@@ -358,8 +370,8 @@ export default function Ordens() {
             <option value="">Todos veículos</option>
             {(veiculos||[]).map(v=><option key={v.id} value={v.id}>{v.placa} — {v.tipo}</option>)}
           </select>
-          {(filtInicio||filtFim||filtStatus!=='pendente'||filtMotorista||filtVeiculo) && (
-            <button className="btn btn-ghost btn-sm" onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');setFiltMotorista('');setFiltVeiculo('');}}>✕</button>
+          {(filtInicio||filtFim||filtStatus!=='pendente'||filtMotorista||filtVeiculo||filtBusca) && (
+            <button className="btn btn-ghost btn-sm" onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');setFiltMotorista('');setFiltVeiculo('');setFiltBusca('');}}>✕</button>
           )}
           <button className="btn btn-ghost" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
           <button className="btn btn-primary" onClick={openModal}>+ Nova Ordem</button>

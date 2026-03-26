@@ -1,9 +1,6 @@
 import { useState, useRef } from 'react';
-import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
-import { Field, Input, Select, useToast, Toast } from '../components/UI';
-
-const fmt = v => v !== null && v !== undefined ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : '—';
+import { Field, Input, useToast, Toast } from '../components/UI';
 
 function parsePlanilha(file) {
   return new Promise((resolve, reject) => {
@@ -14,7 +11,7 @@ function parsePlanilha(file) {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-        // Dados começam na linha 4 (index 4), ignorar headers
+        // Dados começam na linha 4 (index 4)
         const rotas = {};
         for (let i = 4; i < raw.length; i++) {
           const row = raw[i];
@@ -40,8 +37,6 @@ function parsePlanilha(file) {
             nf: String(row[5] || '').trim() || null,
             remessa: String(row[12] || '').trim() || null,
             obs: String(row[8] || '').trim() || null,
-            endereco: String(row[13] || '').trim(),
-            cidade: String(row[14] || '').trim(),
           });
         }
 
@@ -57,28 +52,10 @@ export default function Importacao() {
   const today = new Date().toISOString().split('T')[0];
   const [data, setData] = useState(today);
   const [rotas, setRotas] = useState(null);
-  const [atribuicoes, setAtribuicoes] = useState({});
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
   const fileRef = useRef();
   const { toast, showToast } = useToast();
-
-  const { data: motoristas } = useFetch('/motoristas');
-  const { data: veiculos } = useFetch('/veiculos');
-  const { data: regioes } = useFetch('/financeiro/fretes/regioes');
-
-  const setAttr = (rota, key, val) => {
-    setAtribuicoes(a => ({ ...a, [rota]: { ...(a[rota] || {}), [key]: val } }));
-  };
-
-  // Auto-preencher veículo quando seleciona motorista
-  const onMotoristaChange = (rota, motoristaId) => {
-    setAttr(rota, 'motorista_id', motoristaId);
-    const mot = (motoristas || []).find(m => String(m.id) === String(motoristaId));
-    if (mot?.veiculo_padrao_id) {
-      setAttr(rota, 'veiculo_id', mot.veiculo_padrao_id);
-    }
-  };
 
   const onFileChange = async (e) => {
     const file = e.target.files[0];
@@ -86,47 +63,30 @@ export default function Importacao() {
     try {
       const parsed = await parsePlanilha(file);
       setRotas(parsed);
-      setAtribuicoes({});
       setResultado(null);
-      showToast(`${parsed.length} rotas encontradas com ${parsed.reduce((s,r) => s + r.paradas.length, 0)} paradas`);
+      showToast(`${parsed.length} rotas com ${parsed.reduce((s,r) => s + r.paradas.length, 0)} paradas`);
     } catch(err) {
       showToast('Erro ao ler planilha: ' + err.message, 'error');
     }
   };
 
   const importar = async () => {
-    // Validar que todas as rotas têm motorista e veículo
-    const faltando = (rotas || []).filter(r => {
-      const a = atribuicoes[r.numero_rota] || {};
-      return !a.motorista_id || !a.veiculo_id;
-    });
-    if (faltando.length) {
-      showToast(`Preencha Motorista e Veículo para ${faltando.length} rota(s): ${faltando.map(r=>r.numero_rota).join(', ')}`, 'error');
-      return;
-    }
-
+    if (!rotas?.length) return;
     setImportando(true);
     try {
       const payload = {
         data,
-        rotas: (rotas || []).map(r => {
-          const a = atribuicoes[r.numero_rota] || {};
-          return {
-            numero_rota: r.numero_rota,
-            motorista_id: a.motorista_id,
-            veiculo_id: a.veiculo_id,
-            ajudante_nome: a.ajudante_nome || null,
-            regiao: a.regiao || null,
-            tipo: a.tipo || 'INTEIRO',
-            tabela_frete_id: a.tabela_frete_id || null,
-            paradas: r.paradas,
-          };
-        }),
+        rotas: rotas.map(r => ({
+          numero_rota: r.numero_rota,
+          motorista_id: null,
+          veiculo_id: null,
+          paradas: r.paradas,
+        })),
       };
 
       const res = await api.post('/ordens/importar', payload);
       setResultado(res);
-      showToast(`${res.total} ordens criadas com sucesso!`);
+      showToast(`${res.total} ordens importadas!`);
     } catch(e) { showToast('Erro: ' + e.message, 'error'); }
     finally { setImportando(false); }
   };
@@ -138,21 +98,25 @@ export default function Importacao() {
       <div className="page-header">
         <div style={{flex:1}}>
           <div className="page-title">Importar Roteirização</div>
-          <div className="page-desc">Importar planilha da Léo Madeiras e atribuir motorista/veículo</div>
+          <div className="page-desc">Upload da planilha Léo Madeiras → ordens pendentes</div>
         </div>
       </div>
 
       <div className="page-body">
         {/* Upload */}
         <div className="card mb-16">
+          <div style={{fontSize:12,color:'var(--text3)',marginBottom:12}}>
+            Faça o upload da planilha de roteirização. Todas as paradas serão importadas como <strong>ordens pendentes</strong>.
+            Depois, vá em <strong>Ordens de Transporte</strong> e edite cada rota para atribuir motorista, veículo e região.
+          </div>
           <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
-            <div style={{flex:'1 1 150px'}}>
+            <div style={{flex:'1 1 140px'}}>
               <Field label="Data da entrega *">
                 <Input type="date" value={data} onChange={e=>setData(e.target.value)} />
               </Field>
             </div>
             <div style={{flex:'2 1 200px'}}>
-              <Field label="Planilha de Roteirização (.xlsx / .xlsm)">
+              <Field label="Planilha (.xlsx / .xlsm)">
                 <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls"
                   className="form-input" style={{padding:'8px'}}
                   onChange={onFileChange} />
@@ -161,19 +125,33 @@ export default function Importacao() {
           </div>
         </div>
 
-        {/* Resultado da importação */}
+        {/* Resultado */}
         {resultado && (
-          <div style={{padding:'14px 16px',background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'var(--radius)',marginBottom:16,fontSize:13,color:'#16A34A'}}>
-            ✅ <strong>{resultado.total} ordens</strong> importadas com sucesso! Vá para <a href="/ordens" style={{color:'#16A34A',fontWeight:600}}>Ordens de Transporte</a> para visualizar.
+          <div className="card mb-16" style={{background:'#F0FDF4',border:'1px solid #BBF7D0'}}>
+            <div style={{fontSize:15,fontWeight:700,color:'#16A34A',marginBottom:8}}>
+              ✅ {resultado.total} ordens importadas com sucesso!
+            </div>
+            <div style={{fontSize:13,color:'#15803d',marginBottom:12}}>
+              Agora vá em Ordens de Transporte para atribuir motorista, veículo e região a cada rota.
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <a href="/ordens" className="btn btn-primary" style={{textDecoration:'none'}}>
+                Ir para Ordens →
+              </a>
+              <button className="btn btn-ghost" onClick={()=>{setRotas(null);setResultado(null);if(fileRef.current)fileRef.current.value='';}}>
+                Importar outra planilha
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Preview das rotas */}
+        {/* Preview resumido */}
         {rotas && !resultado && (
           <>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:14,fontWeight:600}}>
-                {rotas.length} rotas — {totalParadas} paradas
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+              <div>
+                <span style={{fontSize:14,fontWeight:600}}>{rotas.length} rotas</span>
+                <span style={{color:'var(--text3)',marginLeft:8}}>{totalParadas} paradas no total</span>
               </div>
               <button className="btn btn-primary" onClick={importar} disabled={importando}
                 style={{background:'#16a34a',boxShadow:'0 2px 8px rgba(22,163,74,.25)'}}>
@@ -181,83 +159,33 @@ export default function Importacao() {
               </button>
             </div>
 
-            {rotas.map(rota => {
-              const a = atribuicoes[rota.numero_rota] || {};
-              return (
-                <div key={rota.numero_rota} className="card mb-16 fade-up">
-                  {/* Header da rota */}
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-                    <div>
-                      <div style={{fontSize:16,fontWeight:700,color:'var(--accent)'}}>Rota {rota.numero_rota}</div>
-                      <div style={{fontSize:11,color:'var(--text3)'}}>
-                        {rota.paradas.length} paradas — Placa ref: {rota.placa_ref || '—'} — Operador: {rota.operador_ref || '—'}
-                      </div>
-                    </div>
-                    <div style={{
-                      padding:'4px 12px', borderRadius:99, fontSize:12, fontWeight:600,
-                      background: a.motorista_id && a.veiculo_id ? '#dcfce7' : '#fee2e2',
-                      color: a.motorista_id && a.veiculo_id ? '#16a34a' : '#dc2626',
-                    }}>
-                      {a.motorista_id && a.veiculo_id ? '✓ Pronto' : '⚠ Pendente'}
-                    </div>
-                  </div>
-
-                  {/* Atribuições — o que o operador precisa preencher */}
-                  <div style={{padding:'12px',background:'var(--bg3)',borderRadius:'var(--radius)',marginBottom:12}}>
-                    <div style={{display:'grid',gap:10}}>
-                      <div className="form-grid cols-2">
-                        <Field label="Motorista *">
-                          <Select value={a.motorista_id||''} onChange={e=>onMotoristaChange(rota.numero_rota, e.target.value)}
-                            options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
-                        </Field>
-                        <Field label="Veículo *">
-                          <Select value={a.veiculo_id||''} onChange={e=>setAttr(rota.numero_rota,'veiculo_id',e.target.value)}
-                            options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo}`}))} />
-                        </Field>
-                      </div>
-                      <div className="form-grid cols-2">
-                        <Field label="Ajudante">
-                          <Input value={a.ajudante_nome||''} onChange={e=>setAttr(rota.numero_rota,'ajudante_nome',e.target.value)}
-                            placeholder="Opcional" />
-                        </Field>
-                        <Field label="Região (frete)">
-                          <Select value={a.regiao||''} onChange={e=>setAttr(rota.numero_rota,'regiao',e.target.value)}
-                            options={(regioes||[]).map(r=>({value:r,label:r}))} />
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Tabela de paradas (resumida) */}
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Seq</th><th>Cliente</th><th>Região</th><th>Peso</th><th>Remessa</th></tr></thead>
-                      <tbody>
-                        {rota.paradas.map((p,i) => (
-                          <tr key={i}>
-                            <td className="fw-600">{p.seq}</td>
-                            <td>
-                              <div className="fw-500" style={{fontSize:12}}>{p.cliente_nome}</div>
-                              {p.endereco && <div style={{fontSize:10,color:'var(--text3)'}}>{p.endereco.substring(0,50)}</div>}
-                            </td>
-                            <td style={{fontSize:12}}>{p.regiao || '—'}</td>
-                            <td style={{fontSize:12}}>{p.peso ? p.peso.toFixed(1)+' kg' : '—'}</td>
-                            <td className="font-mono" style={{fontSize:10}}>{p.remessa || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Botão importar no final também */}
-            <div style={{textAlign:'center',padding:'20px 0'}}>
-              <button className="btn btn-primary" onClick={importar} disabled={importando}
-                style={{background:'#16a34a',padding:'12px 32px',fontSize:14}}>
-                {importando ? 'Importando...' : `✅ Importar ${totalParadas} ordens`}
-              </button>
+            <div className="card fade-up">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Rota</th>
+                      <th>Paradas</th>
+                      <th>Placa (ref.)</th>
+                      <th>Operador (ref.)</th>
+                      <th>Peso total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rotas.map(r => (
+                      <tr key={r.numero_rota}>
+                        <td className="font-mono fw-600" style={{color:'var(--accent)'}}>{r.numero_rota}</td>
+                        <td>{r.paradas.length}</td>
+                        <td className="font-mono" style={{fontSize:11}}>{r.placa_ref || '—'}</td>
+                        <td style={{fontSize:12}}>{r.operador_ref ? r.operador_ref.substring(0, 25) : '—'}</td>
+                        <td style={{fontSize:12}}>
+                          {r.paradas.reduce((s, p) => s + (p.peso || 0), 0).toFixed(1)} kg
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}
@@ -266,7 +194,7 @@ export default function Importacao() {
           <div className="card" style={{textAlign:'center',padding:'40px 0',color:'var(--text3)'}}>
             <div style={{fontSize:32,marginBottom:8}}>📁</div>
             <div>Faça o upload da planilha de roteirização para começar.</div>
-            <div style={{fontSize:12,marginTop:4}}>Formato aceito: .xlsx, .xlsm (planilha da Léo Madeiras)</div>
+            <div style={{fontSize:12,marginTop:4}}>Formato: .xlsx ou .xlsm (planilha da Léo Madeiras)</div>
           </div>
         )}
       </div>

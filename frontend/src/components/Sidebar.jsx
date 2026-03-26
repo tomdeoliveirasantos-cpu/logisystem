@@ -71,7 +71,12 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       <aside className={sidebarClass}>
         {/* Brand + toggle */}
         <div className="sidebar-brand">
-          <div className="brand-icon">L</div>
+          <div className="brand-icon" style={{background:'linear-gradient(135deg, #2563EB, #1D4ED8)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M3 8l4 10 3-7 3 7 4-10" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M19 6h3v3M22 6l-5 5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity=".6"/>
+            </svg>
+          </div>
           {!collapsed && (
             <div style={{flex:1,minWidth:0}}>
               <div className="brand-name">LogiSystem</div>

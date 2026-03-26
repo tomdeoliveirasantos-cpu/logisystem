@@ -25,7 +25,35 @@ export default function Romaneio() {
     finally { setLoading(false); }
   };
 
-  const imprimir = () => window.print();
+  const imprimir = () => {
+    // No mobile, window.print() pode não funcionar direto
+    // Usar setTimeout para garantir que o iOS processa
+    const content = document.querySelector('.romaneio-content');
+    if (!content) return;
+    
+    // Tentar print nativo primeiro
+    try {
+      window.print();
+    } catch(e) {
+      // Fallback: abrir em nova janela
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(`
+          <html><head><title>Romaneio</title>
+          <style>
+            body { font-family: -apple-system, system-ui, sans-serif; padding: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #f5f5f5; font-weight: 600; font-size: 11px; }
+            .header { display: flex; justify-content: space-between; margin-bottom: 16px; }
+            .rota { font-size: 24px; font-weight: 800; color: #2563EB; }
+          </style></head><body>${content.innerHTML}</body></html>
+        `);
+        win.document.close();
+        win.print();
+      }
+    }
+  };
 
   return (
     <div>
@@ -55,12 +83,22 @@ export default function Romaneio() {
               {loading ? 'Buscando...' : 'Buscar'}
             </button>
             {romaneio?.rotas?.length > 0 && (
-              <button className="btn btn-ghost" onClick={imprimir}>🖨️ Imprimir / PDF</button>
+              <>
+                <button className="btn btn-primary" onClick={imprimir}>🖨️ Imprimir / PDF</button>
+                <button className="btn btn-ghost" onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({ title: `Romaneio ${data}`, text: `Romaneio de entregas - ${fmtDate(data)}`, url: window.location.href });
+                  } else {
+                    window.print();
+                  }
+                }}>📤 Compartilhar</button>
+              </>
             )}
           </div>
         </div>
 
         {/* Conteúdo do romaneio — aparece na impressão */}
+        <div className="romaneio-content">
         {romaneio?.rotas?.map((rotaData, idx) => (
           <div key={idx} className="romaneio-page" style={{marginBottom:24}}>
             {/* Cabeçalho da rota */}
@@ -172,6 +210,7 @@ export default function Romaneio() {
             </div>
           </div>
         ))}
+        </div>
 
         {!romaneio && (
           <div className="card no-print" style={{textAlign:'center',padding:'40px 0',color:'var(--text3)'}}>

@@ -290,6 +290,105 @@ router.patch('/:id/status', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Importação em massa (planilha roteirização) ──────────
+router.post('/importar', async (req, res, next) => {
+  try {
+    const { data, rotas } = req.body;
+    // rotas = [{ numero_rota, motorista_id, veiculo_id, ajudante_nome, regiao, paradas: [{seq, pedido, cliente_nome, peso, nf, remessa, obs}] }]
+
+    if (!data || !rotas?.length) return res.status(400).json({ error: 'Data e rotas são obrigatórios' });
+
+    const criadas = [];
+
+    for (const rota of rotas) {
+      const { numero_rota, motorista_id, veiculo_id, ajudante_nome, tabela_frete_id } = rota;
+
+      for (const parada of (rota.paradas || [])) {
+        const { rows } = await db.query(
+          `INSERT INTO logi_ordens_transporte
+            (data, numero_rota, seq, pedido, cliente_nome, regiao, peso, nf, remessa, obs,
+             motorista_id, veiculo_id, ajudante_nome, status, tipo)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pendente',$14)
+           RETURNING *`,
+          [data, numero_rota, parada.seq || 1, parada.pedido || null,
+           parada.cliente_nome || null, parada.regiao || rota.regiao || null,
+           parada.peso || null, parada.nf || null, parada.remessa || null, parada.obs || null,
+           motorista_id || null, veiculo_id || null, ajudante_nome || null,
+           rota.tipo || 'INTEIRO']
+        );
+
+        const ordem = rows[0];
+        criadas.push(ordem);
+
+        // Geração automática financeiro (mesma lógica do POST normal)
+        if (veiculo_id) {
+          // Contas a Receber (frete fixo por veículo)
+          try {
+            const { rows: vr } = await db.query('SELECT tipo FROM logi_veiculos WHERE id = $1', [veiculo_id]);
+            if (vr.length) {
+              const tipoVeiculo = vr[0].tipo;
+              const { rows: fr } = await db.query(
+                'SELECT valor FROM logi_tabela_frete_recebido WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))',
+                [tipoVeiculo]
+              );
+              if (fr.length && fr[0].valor) {
+                await db.query(
+                  `INSERT INTO logi_contas_receber (ordem_id, cliente, valor, vencimento, obs)
+                   VALUES ($1, $2, $3, $4, $5)`,
+                  [ordem.id, 'Léo Madeiras', fr[0].valor, data,
+                   `Frete recebido - ${tipoVeiculo} - Rota ${numero_rota} - ${parada.regiao || ''}`]
+                );
+              }
+            }
+          } catch(e) { console.error('Erro receber importação:', e.message); }
+
+          // Contas a Pagar (frete agregado)
+          if (tabela_frete_id) {
+            try {
+              const { rows: vrows } = await db.query(
+                `SELECT v.ag_ft, t.id AS transportadora_id, t.nome AS transportadora_nome
+                 FROM logi_veiculos v LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
+                 WHERE v.id = $1`, [veiculo_id]
+              );
+              if (vrows.length && vrows[0].ag_ft === 'agregado') {
+                const { rows: fr } = await db.query('SELECT valor_base FROM logi_tabela_fretes WHERE id = $1', [tabela_frete_id]);
+                if (fr.length) {
+                  await db.query(
+                    `INSERT INTO logi_contas_pagar (ordem_id, tabela_frete_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                    [ordem.id, tabela_frete_id, vrows[0].transportadora_id, motorista_id,
+                     fr[0].valor_base, data, `Frete agregado - Rota ${numero_rota}`, 'frete_agregado']
+                  );
+                }
+              }
+            } catch(e) { console.error('Erro pagar importação:', e.message); }
+          }
+
+          // Ajudante
+          if (ajudante_nome) {
+            try {
+              const { rows: paramRows } = await db.query("SELECT valor FROM logi_parametros WHERE chave = 'valor_ajudante'");
+              if (paramRows.length) {
+                const valorAjudante = parseFloat(paramRows[0].valor) || 0;
+                if (valorAjudante > 0) {
+                  await db.query(
+                    `INSERT INTO logi_contas_pagar (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+                     VALUES ($1,$2,$3,$4,$5,$6)`,
+                    [ordem.id, motorista_id, valorAjudante, data,
+                     `Ajudante - ${ajudante_nome} - Rota ${numero_rota}`, 'diaria_ajudante']
+                  );
+                }
+              }
+            } catch(e) { console.error('Erro ajudante importação:', e.message); }
+          }
+        }
+      }
+    }
+
+    res.status(201).json({ success: true, total: criadas.length, ordens: criadas });
+  } catch (err) { next(err); }
+});
+
 // ── Editar ordem ─────────────────────────────────────────
 router.put('/:id', upload.single('anexo'), async (req, res, next) => {
   try {

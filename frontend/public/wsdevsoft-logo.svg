@@ -1,0 +1,21 @@
+<svg width="200" height="48" viewBox="0 0 200 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ícone -->
+  <rect x="2" y="8" width="32" height="32" rx="7" fill="url(#ws_full)"/>
+  <path d="M8 20l4 10 3-7 3 7 4-10" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 18h4v4M28 18l-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+  
+  <!-- Texto -->
+  <text x="42" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="700" fill="#1A2740">
+    <tspan fill="#6366F1">Ws</tspan>DevSoft
+  </text>
+  <text x="42" y="36" font-family="system-ui, -apple-system, sans-serif" font-size="10" fill="#94A3B8">
+    Soluções em Tecnologia
+  </text>
+  
+  <defs>
+    <linearGradient id="ws_full" x1="2" y1="8" x2="34" y2="40">
+      <stop stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+</svg>

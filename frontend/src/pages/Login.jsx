@@ -209,6 +209,24 @@ export default function Login() {
         <div style={{ textAlign: 'center', marginTop: 24, fontSize: 12, color: '#94A3B8' }}>
           Problemas de acesso? Fale com o administrador.
         </div>
+
+        {/* Marca WsDevSoft */}
+        <div style={{ textAlign: 'center', marginTop: 32, paddingTop: 16, borderTop: '1px solid #E8EDF5' }}>
+          <a href="https://wsdevsoft.com" target="_blank" rel="noreferrer"
+            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, opacity: 0.6, transition: 'opacity .2s' }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}>
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="7" fill="url(#ws_grad)"/>
+              <path d="M6 12l4 10 3-7 3 7 4-10" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M22 10h4v4M26 10l-6 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity=".7"/>
+              <defs><linearGradient id="ws_grad" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#6366F1"/><stop offset="1" stopColor="#4F46E5"/></linearGradient></defs>
+            </svg>
+            <span style={{ fontSize: 11, color: '#94A3B8', letterSpacing: '.3px' }}>
+              Desenvolvido por <strong style={{ color: '#6366F1', fontWeight: 600 }}>WsDevSoft</strong>
+            </span>
+          </a>
+        </div>
       </div>
 
       <style>{`

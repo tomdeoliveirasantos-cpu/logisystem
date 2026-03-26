@@ -171,9 +171,29 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
             </button>
           </div>
 
-          {/* Versão */}
+          {/* Versão + Marca */}
           {!collapsed && (
-            <div style={{padding:'0 14px 12px',fontSize:10,color:'rgba(255,255,255,.2)'}}>LogiSystem v3.0</div>
+            <div style={{padding:'8px 14px 12px'}}>
+              <a href="https://wsdevsoft.com" target="_blank" rel="noreferrer"
+                style={{
+                  display:'flex', alignItems:'center', gap:6,
+                  textDecoration:'none', opacity:.4, transition:'opacity .2s',
+                  marginBottom:4,
+                }}
+                onMouseEnter={e=>e.currentTarget.style.opacity='0.8'}
+                onMouseLeave={e=>e.currentTarget.style.opacity='0.4'}>
+                <svg width="14" height="14" viewBox="0 0 32 32" fill="none">
+                  <rect width="32" height="32" rx="7" fill="url(#ws_sb)"/>
+                  <path d="M6 12l4 10 3-7 3 7 4-10" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M22 10h4v4M26 10l-6 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity=".7"/>
+                  <defs><linearGradient id="ws_sb" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#6366F1"/><stop offset="1" stopColor="#4F46E5"/></linearGradient></defs>
+                </svg>
+                <span style={{fontSize:9,color:'rgba(255,255,255,.5)',letterSpacing:'.3px'}}>
+                  por <strong style={{color:'rgba(255,255,255,.6)'}}>WsDevSoft</strong>
+                </span>
+              </a>
+              <div style={{fontSize:9,color:'rgba(255,255,255,.15)'}}>LogiSystem v3.0</div>
+            </div>
           )}
         </div>
       </aside>

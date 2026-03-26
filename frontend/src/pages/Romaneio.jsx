@@ -60,25 +60,15 @@ export default function Romaneio() {
         heightLeft -= pageHeight;
       }
 
-      const nomeArquivo = `romaneio_${data}${rota ? '_rota_'+rota : ''}.pdf`;
+      // Gerar blob e abrir em nova aba (funciona em iOS e Android)
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
 
-      // Mobile: compartilhar como arquivo PDF
-      if (navigator.share && navigator.canShare) {
-        const blob = pdf.output('blob');
-        const file = new File([blob], nomeArquivo, { type: 'application/pdf' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: `Romaneio ${fmtDate(data)}`,
-            files: [file],
-          });
-          setGerando(false);
-          return;
-        }
-      }
+      // Limpar URL depois de 1 minuto
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
 
-      // Desktop: download direto
-      pdf.save(nomeArquivo);
-      showToast('PDF gerado!');
+      showToast('PDF gerado! Use o botão de compartilhar do navegador.');
     } catch(e) {
       console.error('Erro PDF:', e);
       showToast('Erro ao gerar PDF: ' + e.message, 'error');

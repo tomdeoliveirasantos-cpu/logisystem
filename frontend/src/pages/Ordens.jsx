@@ -240,9 +240,15 @@ export default function Ordens() {
       if (freteData?.pagar?.id) fd.append('tabela_frete_id', freteData.pagar.id);
 
       const token = localStorage.getItem('logi_token');
-      const res = await fetch('https://api.wsdevsoft.com/api/ordens',{method:'POST',body:fd,headers:{Authorization:`Bearer ${token}`}});
+      const url = editingId
+        ? `https://api.wsdevsoft.com/api/ordens/${editingId}`
+        : 'https://api.wsdevsoft.com/api/ordens';
+      const method = editingId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
       if(!res.ok) throw new Error('Erro ao salvar');
-      showToast('Ordem criada com sucesso!'); refetch(); setModal(false); setForm({ data: today }); setAnexo(null); setFreteData(null);
+      showToast(editingId ? 'Ordem atualizada!' : 'Ordem criada!');
+      refetch(); closeModal();
     } catch(e) { showToast(e.message,'error'); }
   };
 
@@ -251,8 +257,40 @@ export default function Ordens() {
     catch(e) { showToast(e.message,'error'); }
   };
 
-  const openModal = () => {
-    setForm({ data: today });
+  const [editingId, setEditingId] = useState(null);
+  const [filtMotorista, setFiltMotorista] = useState('');
+  const [filtVeiculo, setFiltVeiculo] = useState('');
+  const [historicoModal, setHistoricoModal] = useState(null);
+  const [historico, setHistorico] = useState([]);
+
+  const openModal = (ordemExistente = null) => {
+    if (ordemExistente) {
+      // Edição
+      setEditingId(ordemExistente.id);
+      setForm({
+        data: ordemExistente.data?.substring(0,10) || today,
+        numero_rota: ordemExistente.numero_rota || '',
+        seq: ordemExistente.seq || 1,
+        cliente_id: ordemExistente.cliente_id || '',
+        cliente_nome: ordemExistente.cliente_nome || '',
+        motorista_id: ordemExistente.motorista_id || '',
+        ajudante_nome: ordemExistente.ajudante_nome || '',
+        veiculo_id: ordemExistente.veiculo_id || '',
+        regiao: ordemExistente.regiao || '',
+        tipo: ordemExistente.tipo || '',
+        pedido: ordemExistente.pedido || '',
+        nf: ordemExistente.nf || '',
+        peso: ordemExistente.peso || '',
+        remessa: ordemExistente.remessa || '',
+        ajuda_diesel: ordemExistente.ajuda_diesel || '',
+        taxa_descarga: ordemExistente.taxa_descarga || '',
+        obs: ordemExistente.obs || '',
+        status: ordemExistente.status || 'pendente',
+      });
+    } else {
+      setEditingId(null);
+      setForm({ data: today });
+    }
     setAnexo(null);
     setFormError('');
     setFreteData(null);
@@ -261,12 +299,24 @@ export default function Ordens() {
 
   const closeModal = () => {
     setModal(false);
+    setEditingId(null);
     setForm({ data: today });
     setAnexo(null);
     setFreteData(null);
   };
 
-  const rows = data||[];
+  const showHistorico = async (ordemId) => {
+    try {
+      const data = await api.get(`/ordens/${ordemId}/historico`);
+      setHistorico(data || []);
+      setHistoricoModal(ordemId);
+    } catch(e) { showToast(e.message, 'error'); }
+  };
+
+  // Filtros adicionais no frontend
+  let rows = data||[];
+  if (filtMotorista) rows = rows.filter(r => String(r.motorista_id) === String(filtMotorista));
+  if (filtVeiculo) rows = rows.filter(r => String(r.veiculo_id) === String(filtVeiculo));
 
   return (
     <div>
@@ -288,8 +338,16 @@ export default function Ordens() {
             <option value="">Todos status</option>
             {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {(filtInicio||filtFim||filtStatus!=='pendente') && (
-            <button className="btn btn-ghost btn-sm" onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');}}>✕</button>
+          <select className="form-select" style={{width:150}} value={filtMotorista} onChange={e=>setFiltMotorista(e.target.value)}>
+            <option value="">Todos motoristas</option>
+            {(motoristas||[]).map(m=><option key={m.id} value={m.id}>{m.nome}</option>)}
+          </select>
+          <select className="form-select" style={{width:150}} value={filtVeiculo} onChange={e=>setFiltVeiculo(e.target.value)}>
+            <option value="">Todos veículos</option>
+            {(veiculos||[]).map(v=><option key={v.id} value={v.id}>{v.placa} — {v.tipo}</option>)}
+          </select>
+          {(filtInicio||filtFim||filtStatus!=='pendente'||filtMotorista||filtVeiculo) && (
+            <button className="btn btn-ghost btn-sm" onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');setFiltMotorista('');setFiltVeiculo('');}}>✕</button>
           )}
           <button className="btn btn-ghost" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
           <button className="btn btn-primary" onClick={openModal}>+ Nova Ordem</button>
@@ -364,10 +422,14 @@ export default function Ordens() {
                     {visivel('anexo') && <td><AnexoCell ordem={r} /></td>}
                     <td><StatusBadge status={r.status} /></td>
                     <td>
-                      <select className="form-select" style={{width:110,fontSize:11,padding:'4px 6px'}}
-                        value={r.status} onChange={e=>updateStatus(r.id,e.target.value)}>
-                        {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                        <select className="form-select" style={{width:100,fontSize:11,padding:'4px 6px'}}
+                          value={r.status} onChange={e=>updateStatus(r.id,e.target.value)}>
+                          {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>openModal(r)} title="Editar">✏️</button>
+                        <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>showHistorico(r.id)} title="Histórico">🕐</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -382,7 +444,7 @@ export default function Ordens() {
         <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div className="modal" style={{maxWidth:700}}>
             <div className="modal-header">
-              <span className="modal-title">Nova Ordem de Transporte</span>
+              <span className="modal-title">{editingId ? 'Editar Ordem de Transporte' : 'Nova Ordem de Transporte'}</span>
               <button className="modal-close" onClick={closeModal}>×</button>
             </div>
             <div className="modal-body">
@@ -511,11 +573,49 @@ export default function Ordens() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
-              <button className="btn btn-primary" onClick={save}>Salvar Ordem</button>
+              <button className="btn btn-primary" onClick={save}>{editingId ? 'Salvar Alterações' : 'Salvar Ordem'}</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal Histórico */}
+      {historicoModal && (
+        <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&setHistoricoModal(null)}>
+          <div className="modal" style={{maxWidth:480}}>
+            <div className="modal-header">
+              <span className="modal-title">Histórico de Alterações</span>
+              <button className="modal-close" onClick={()=>setHistoricoModal(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              {!historico.length ? (
+                <div style={{textAlign:'center',color:'var(--text3)',padding:'24px 0',fontSize:13}}>
+                  Nenhuma alteração registrada
+                </div>
+              ) : (
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {historico.map((h,i) => (
+                    <div key={i} style={{padding:'10px 12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--radius)',fontSize:12}}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                        <span className="fw-500">{h.usuario_nome || 'Sistema'}</span>
+                        <span style={{color:'var(--text3)',fontSize:11}}>
+                          {new Date(h.created_at).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      <div>
+                        <StatusBadge status={h.status_anterior} />
+                        <span style={{margin:'0 6px',color:'var(--text3)'}}>→</span>
+                        <StatusBadge status={h.status_novo} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <Toast {...toast} />}
     </div>
   );

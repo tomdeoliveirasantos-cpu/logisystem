@@ -24,6 +24,8 @@ export default function Dashboard() {
   const { data: resumo }  = useFetch(`/relatorios/resumo-diario?data=${hoje}`);
   const { data: fat }     = useFetch(`/relatorios/faturamento?mes=${mesAtual}`);
   const { data: evolucao} = useFetch(`/relatorios/evolucao-diaria?inicio=${mesAtual}-01&fim=${hoje}`);
+  const { data: rentRegiao } = useFetch(`/relatorios/rentabilidade-regiao?mes=${mesAtual}`);
+  const { data: fechamento } = useFetch(`/relatorios/fechamento-mensal?mes=${mesAtual}`);
 
   const fatRows   = fat || [];
   const evoRows   = (evolucao||[]).map(r=>({
@@ -156,6 +158,72 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
+
+        {/* Rentabilidade por região */}
+        <div className="card fade-up fade-up-3" style={{marginTop:16}}>
+          <div className="section-header">
+            <span className="section-title">Rentabilidade por região — mês atual</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Região</th><th>Ordens</th><th>Receber</th><th>Pagar</th><th>Margem</th><th>%</th></tr></thead>
+              <tbody>
+                {(!rentRegiao||!rentRegiao.length) && (
+                  <tr><td colSpan={6} style={{textAlign:'center',color:'var(--text3)',padding:'24px 0',fontSize:13}}>
+                    Sem dados no mês
+                  </td></tr>
+                )}
+                {(rentRegiao||[]).map(r=>(
+                  <tr key={r.regiao}>
+                    <td className="fw-500" style={{fontSize:12}}>{r.regiao}</td>
+                    <td>{r.total_ordens}</td>
+                    <td style={{color:'var(--green)'}}>{fmt(r.valor_receber)}</td>
+                    <td style={{color:'var(--red)'}}>{fmt(r.valor_pagar)}</td>
+                    <td className="fw-600" style={{color:Number(r.margem)>=0?'var(--green)':'var(--red)'}}>{fmt(r.margem)}</td>
+                    <td>
+                      <span className={`badge ${Number(r.pct_margem)>=20?'badge-green':Number(r.pct_margem)>=0?'badge-amber':'badge-red'}`}>
+                        {r.pct_margem}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Fechamento mensal */}
+        {fechamento && (
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,marginTop:16}}>
+            <div className="card fade-up">
+              <div className="section-title" style={{marginBottom:12}}>Operacional</div>
+              <div style={{display:'grid',gap:8,fontSize:13}}>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Ordens</span><span className="fw-600">{fechamento.ordens?.total_ordens || 0}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Entregues</span><span className="fw-600" style={{color:'var(--green)'}}>{fechamento.ordens?.entregues || 0}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Devoluções</span><span className="fw-600" style={{color:'var(--red)'}}>{fechamento.ordens?.devolucoes || 0}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Cancelados</span><span className="fw-600">{fechamento.ordens?.cancelados || 0}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Rotas</span><span className="fw-600">{fechamento.ordens?.total_rotas || 0}</span></div>
+              </div>
+            </div>
+            <div className="card fade-up">
+              <div className="section-title" style={{marginBottom:12,color:'var(--green)'}}>Contas a Receber</div>
+              <div style={{display:'grid',gap:8,fontSize:13}}>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Total</span><span className="fw-600">{fmt(fechamento.receber?.total)}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Recebido</span><span className="fw-600" style={{color:'var(--green)'}}>{fmt(fechamento.receber?.recebido)}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Em aberto</span><span className="fw-600" style={{color:'var(--amber)'}}>{fmt(fechamento.receber?.em_aberto)}</span></div>
+              </div>
+            </div>
+            <div className="card fade-up">
+              <div className="section-title" style={{marginBottom:12,color:'var(--red)'}}>Contas a Pagar</div>
+              <div style={{display:'grid',gap:8,fontSize:13}}>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Total</span><span className="fw-600">{fmt(fechamento.pagar?.total)}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Pago</span><span className="fw-600" style={{color:'var(--green)'}}>{fmt(fechamento.pagar?.pago)}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Em aberto</span><span className="fw-600" style={{color:'var(--amber)'}}>{fmt(fechamento.pagar?.em_aberto)}</span></div>
+                <div style={{borderTop:'1px solid var(--border)',paddingTop:8,marginTop:4,display:'flex',justifyContent:'space-between'}}><span className="fw-600">Margem</span><span className="fw-600" style={{color:fechamento.margem>=0?'var(--green)':'var(--red)'}}>{fmt(fechamento.margem)}</span></div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -252,11 +252,107 @@ router.patch('/:id/status', async (req, res, next) => {
     const { status } = req.body;
     const valid = ['pendente','entregue','devolucao','cancelado'];
     if (!valid.includes(status)) return res.status(422).json({ error: 'Status inválido' });
+
+    // Buscar status anterior
+    const { rows: prev } = await db.query(
+      'SELECT status, numero_rota, data FROM logi_ordens_transporte WHERE id=$1', [req.params.id]
+    );
+    if (!prev.length) return res.status(404).json({ error: 'Ordem não encontrada' });
+    const statusAnterior = prev[0].status;
+
+    // Atualizar status
     const { rows } = await db.query(
       'UPDATE logi_ordens_transporte SET status=$1,updated_at=NOW() WHERE id=$2 RETURNING *',
       [status, req.params.id]
     );
+
+    // Registrar histórico
+    await db.query(
+      `INSERT INTO logi_historico_ordens (ordem_id, status_anterior, status_novo, usuario_id, usuario_nome)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [req.params.id, statusAnterior, status, req.user?.id || null, req.user?.nome || 'sistema']
+    );
+
+    // Se cancelou → reverter financeiro (marcar como cancelado)
+    if (status === 'cancelado' && statusAnterior !== 'cancelado') {
+      await db.query(
+        "UPDATE logi_contas_pagar SET status='cancelado' WHERE ordem_id=$1 AND status='pendente'",
+        [req.params.id]
+      );
+      await db.query(
+        "UPDATE logi_contas_receber SET status='cancelado' WHERE ordem_id=$1 AND status='pendente'",
+        [req.params.id]
+      );
+    }
+
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── Editar ordem ─────────────────────────────────────────
+router.put('/:id', upload.single('anexo'), async (req, res, next) => {
+  try {
+    const {
+      cliente_id, motorista_id, veiculo_id, data, numero_rota, seq,
+      saida, pedido, cliente_nome, regiao, peso, km, nf, remessa,
+      tipo, pagto, ajuda_diesel, taxa_descarga, n_cont, q_capas, obs,
+      ajudante_nome,
+    } = req.body;
+
+    const anexo_nome = req.file ? req.file.originalname : undefined;
+    const anexo_path = req.file ? req.file.filename : undefined;
+    const anexo_size = req.file ? req.file.size : undefined;
+
+    // Montar SET dinâmico (só campos enviados)
+    const sets = [];
+    const params = [];
+    const add = (col, val) => { if (val !== undefined) { params.push(val); sets.push(`${col}=$${params.length}`); } };
+
+    add('cliente_id', cliente_id);
+    add('motorista_id', motorista_id);
+    add('veiculo_id', veiculo_id);
+    add('data', data);
+    add('numero_rota', numero_rota);
+    add('seq', seq);
+    add('saida', saida);
+    add('pedido', pedido);
+    add('cliente_nome', cliente_nome);
+    add('regiao', regiao);
+    add('peso', peso || null);
+    add('km', km || null);
+    add('nf', nf);
+    add('remessa', remessa);
+    add('tipo', tipo);
+    add('pagto', pagto);
+    add('ajuda_diesel', ajuda_diesel || 0);
+    add('taxa_descarga', taxa_descarga || 0);
+    add('n_cont', n_cont);
+    add('q_capas', q_capas || 0);
+    add('obs', obs);
+    add('ajudante_nome', ajudante_nome || null);
+    if (anexo_nome) { add('anexo_nome', anexo_nome); add('anexo_path', anexo_path); add('anexo_tamanho', anexo_size); }
+
+    params.push(new Date());
+    sets.push(`updated_at=$${params.length}`);
+
+    params.push(req.params.id);
+    const { rows } = await db.query(
+      `UPDATE logi_ordens_transporte SET ${sets.join(',')} WHERE id=$${params.length} RETURNING *`,
+      params
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Ordem não encontrada' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── Histórico de alterações ──────────────────────────────
+router.get('/:id/historico', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT * FROM logi_historico_ordens WHERE ordem_id=$1 ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
   } catch (err) { next(err); }
 });
 

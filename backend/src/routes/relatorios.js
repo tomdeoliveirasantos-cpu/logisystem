@@ -123,4 +123,84 @@ router.get('/contas-receber-resumo', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/relatorios/rentabilidade-regiao?mes=2026-03
+router.get('/rentabilidade-regiao', async (req, res, next) => {
+  try {
+    const { mes } = req.query;
+    const params = mes ? [`${mes}%`] : ['%'];
+    const { rows } = await db.query(
+      `SELECT
+         o.regiao,
+         COUNT(o.id) AS total_ordens,
+         COALESCE(SUM(cr.valor), 0) AS valor_receber,
+         COALESCE(SUM(cp.valor), 0) AS valor_pagar,
+         COALESCE(SUM(cr.valor) - SUM(cp.valor), 0) AS margem,
+         CASE WHEN COALESCE(SUM(cr.valor),0) > 0
+           THEN ROUND((SUM(cr.valor) - SUM(cp.valor))::numeric / SUM(cr.valor) * 100, 1)
+           ELSE 0 END AS pct_margem
+       FROM logi_ordens_transporte o
+       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.status != 'cancelado'
+       LEFT JOIN logi_contas_pagar cp ON cp.ordem_id = o.id AND cp.status != 'cancelado'
+       WHERE o.data::text LIKE $1 AND o.status != 'cancelado'
+       GROUP BY o.regiao
+       HAVING o.regiao IS NOT NULL
+       ORDER BY margem DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/fechamento-mensal?mes=2026-03
+router.get('/fechamento-mensal', async (req, res, next) => {
+  try {
+    const { mes } = req.query;
+    const like = mes ? `${mes}%` : `${new Date().toISOString().slice(0,7)}%`;
+
+    const [ordens, receber, pagar] = await Promise.all([
+      db.query(
+        `SELECT
+           COUNT(id) AS total_ordens,
+           SUM(CASE WHEN status='entregue' THEN 1 ELSE 0 END) AS entregues,
+           SUM(CASE WHEN status='devolucao' THEN 1 ELSE 0 END) AS devolucoes,
+           SUM(CASE WHEN status='cancelado' THEN 1 ELSE 0 END) AS cancelados,
+           SUM(CASE WHEN status='pendente' THEN 1 ELSE 0 END) AS pendentes,
+           COUNT(DISTINCT numero_rota) AS total_rotas,
+           COUNT(DISTINCT motorista_id) AS motoristas_ativos,
+           COUNT(DISTINCT veiculo_id) AS veiculos_ativos
+         FROM logi_ordens_transporte WHERE data::text LIKE $1`, [like]
+      ),
+      db.query(
+        `SELECT
+           COUNT(id) AS lancamentos,
+           SUM(valor) AS total,
+           SUM(CASE WHEN status='pendente' THEN valor ELSE 0 END) AS em_aberto,
+           SUM(CASE WHEN status='recebido' THEN valor ELSE 0 END) AS recebido,
+           SUM(CASE WHEN status='cancelado' THEN valor ELSE 0 END) AS cancelado
+         FROM logi_contas_receber WHERE vencimento::text LIKE $1`, [like]
+      ),
+      db.query(
+        `SELECT
+           COUNT(id) AS lancamentos,
+           SUM(valor) AS total,
+           SUM(CASE WHEN status='pendente' THEN valor ELSE 0 END) AS em_aberto,
+           SUM(CASE WHEN status='pago' THEN valor ELSE 0 END) AS pago,
+           SUM(CASE WHEN status='cancelado' THEN valor ELSE 0 END) AS cancelado,
+           SUM(CASE WHEN tipo_lancamento='frete_agregado' THEN valor ELSE 0 END) AS frete_agregado,
+           SUM(CASE WHEN tipo_lancamento='diaria_motorista' THEN valor ELSE 0 END) AS diaria_motorista,
+           SUM(CASE WHEN tipo_lancamento='diaria_ajudante' THEN valor ELSE 0 END) AS diaria_ajudante
+         FROM logi_contas_pagar WHERE vencimento::text LIKE $1`, [like]
+      ),
+    ]);
+
+    res.json({
+      mes: mes || new Date().toISOString().slice(0,7),
+      ordens: ordens.rows[0],
+      receber: receber.rows[0],
+      pagar: pagar.rows[0],
+      margem: (Number(receber.rows[0]?.total) || 0) - (Number(pagar.rows[0]?.total) || 0),
+    });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

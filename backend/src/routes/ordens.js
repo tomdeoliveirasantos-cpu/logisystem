@@ -103,6 +103,7 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
       ajuda_diesel=0, taxa_descarga=0, n_cont, q_capas=0, obs,
       ajudante_nome,
       tabela_frete_id,
+      km_saida, km_chegada,
     } = req.body;
 
     const anexo_nome  = req.file ? req.file.originalname : null;
@@ -114,13 +115,13 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
         (cliente_id,motorista_id,veiculo_id,data,numero_rota,seq,saida,pedido,
          cliente_nome,regiao,peso,km,nf,remessa,status,tipo,pagto,
          ajuda_diesel,taxa_descarga,n_cont,q_capas,obs,
-         anexo_nome,anexo_path,anexo_tamanho,ajudante_nome)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+         anexo_nome,anexo_path,anexo_tamanho,ajudante_nome,km_saida,km_chegada)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
        RETURNING *`,
       [cliente_id,motorista_id,veiculo_id,data,numero_rota,seq,saida,pedido,
        cliente_nome,regiao,peso,km,nf,remessa,status,tipo,pagto,
        ajuda_diesel,taxa_descarga,n_cont,q_capas,obs,
-       anexo_nome,anexo_path,anexo_size,ajudante_nome||null]
+       anexo_nome,anexo_path,anexo_size,ajudante_nome||null,km_saida||null,km_chegada||null]
     );
 
     const ordem = rows[0];
@@ -296,7 +297,7 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
       cliente_id, motorista_id, veiculo_id, data, numero_rota, seq,
       saida, pedido, cliente_nome, regiao, peso, km, nf, remessa,
       tipo, pagto, ajuda_diesel, taxa_descarga, n_cont, q_capas, obs,
-      ajudante_nome,
+      ajudante_nome, km_saida, km_chegada,
     } = req.body;
 
     const anexo_nome = req.file ? req.file.originalname : undefined;
@@ -330,6 +331,8 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
     add('q_capas', q_capas || 0);
     add('obs', obs);
     add('ajudante_nome', ajudante_nome || null);
+    add('km_saida', km_saida || null);
+    add('km_chegada', km_chegada || null);
     if (anexo_nome) { add('anexo_nome', anexo_nome); add('anexo_path', anexo_path); add('anexo_tamanho', anexo_size); }
 
     params.push(new Date());

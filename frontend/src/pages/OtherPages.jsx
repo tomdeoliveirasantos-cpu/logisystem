@@ -228,23 +228,58 @@ export function Veiculos() {
 export function Motoristas() {
   const { data, loading, refetch } = useFetch('/motoristas');
   const { data: transportadoras } = useFetch('/transportadoras');
+  const { data: veiculos } = useFetch('/veiculos');
   const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm]   = useState({});
   const { toast, showToast } = useToast();
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const save=async()=>{ try{await api.post('/motoristas',form);showToast('Motorista cadastrado!');refetch();setModal(false);setForm({});}catch(e){showToast(e.message,'error');}};
+
+  const open = (row=null) => {
+    setEditing(row);
+    setForm(row ? { nome:row.nome, cnh:row.cnh, telefone:row.telefone, transportadora_id:row.transportadora_id, veiculo_padrao_id:row.veiculo_padrao_id } : {});
+    setModal(true);
+  };
+  const close = () => { setModal(false); setEditing(null); setForm({}); };
+
+  const save = async () => {
+    try {
+      if (editing) await api.put(`/motoristas/${editing.id}`, form);
+      else await api.post('/motoristas', form);
+      showToast(editing ? 'Motorista atualizado!' : 'Motorista cadastrado!');
+      refetch(); close();
+    } catch(e) { showToast(e.message,'error'); }
+  };
+
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Motoristas</div><div className="page-desc">Motoristas próprios e agregados</div></div><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Cadastrar Motorista</button></div>
+      <div className="page-header"><div><div className="page-title">Motoristas</div><div className="page-desc">Motoristas próprios e agregados</div></div><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Motorista</button></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>CNH</th><th>Telefone</th><th>Transportadora</th></tr></thead>
+        <thead><tr><th>Nome</th><th>CNH</th><th>Telefone</th><th>Veículo Padrão</th><th>Transportadora</th><th></th></tr></thead>
         <tbody>
-          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:4}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
-          {rows.map(r=>(<tr key={r.id}><td className="fw-500">{r.nome}</td><td className="font-mono" style={{fontSize:12}}>{r.cnh||'—'}</td><td style={{fontSize:12}}>{r.telefone||'—'}</td><td style={{fontSize:12}}>{r.transportadora_nome||'—'}</td></tr>))}
+          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:6}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
+          {rows.map(r=>(<tr key={r.id}>
+            <td className="fw-500">{r.nome}</td>
+            <td className="font-mono" style={{fontSize:12}}>{r.cnh||'—'}</td>
+            <td style={{fontSize:12}}>{r.telefone||'—'}</td>
+            <td style={{fontSize:12}}>
+              {r.veiculo_padrao_placa
+                ? <span><span className="badge badge-teal">{r.veiculo_padrao_tipo}</span> <span style={{marginLeft:4}}>{r.veiculo_padrao_placa}</span></span>
+                : <span style={{color:'var(--text3)'}}>—</span>}
+            </td>
+            <td style={{fontSize:12}}>{r.transportadora_nome||'—'}</td>
+            <td><button className="btn btn-ghost btn-sm" onClick={()=>open(r)}>Editar</button></td>
+          </tr>))}
         </tbody>
       </table></div></div></div>
-      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&setModal(false)}><div className="modal" style={{maxWidth:480}}><div className="modal-header"><span className="modal-title">Cadastrar Motorista</span><button className="modal-close" onClick={()=>setModal(false)}>×</button></div><div className="modal-body"><div className="form-grid cols-2"><div style={{gridColumn:'span 2'}}><Field label="Nome completo *"><Input value={form.nome||''} onChange={e=>set('nome',e.target.value)}/></Field></div><Field label="CNH"><Input value={form.cnh||''} onChange={e=>set('cnh',e.target.value)}/></Field><Field label="Telefone"><Input value={form.telefone||''} onChange={e=>set('telefone',e.target.value)}/></Field><div style={{gridColumn:'span 2'}}><Field label="Transportadora"><Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)} options={(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))}/></Field></div></div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={()=>setModal(false)}>Cancelar</button><button className="btn btn-primary" onClick={save}>Cadastrar</button></div></div></div>)}
+      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}><div className="modal" style={{maxWidth:480}}><div className="modal-header"><span className="modal-title">{editing?'Editar Motorista':'Cadastrar Motorista'}</span><button className="modal-close" onClick={close}>×</button></div><div className="modal-body"><div className="form-grid cols-2">
+        <div style={{gridColumn:'span 2'}}><Field label="Nome completo *"><Input value={form.nome||''} onChange={e=>set('nome',e.target.value)}/></Field></div>
+        <Field label="CNH"><Input value={form.cnh||''} onChange={e=>set('cnh',e.target.value)}/></Field>
+        <Field label="Telefone"><Input value={form.telefone||''} onChange={e=>set('telefone',e.target.value)}/></Field>
+        <div style={{gridColumn:'span 2'}}><Field label="Veículo Padrão"><Select value={form.veiculo_padrao_id||''} onChange={e=>set('veiculo_padrao_id',e.target.value)} options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo}`}))}/></Field></div>
+        <div style={{gridColumn:'span 2'}}><Field label="Transportadora"><Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)} options={(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))}/></Field></div>
+      </div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={close}>Cancelar</button><button className="btn btn-primary" onClick={save}>{editing?'Salvar':'Cadastrar'}</button></div></div></div>)}
       {toast&&<Toast {...toast}/>}
     </div>
   );

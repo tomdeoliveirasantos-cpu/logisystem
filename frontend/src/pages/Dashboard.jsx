@@ -26,6 +26,8 @@ export default function Dashboard() {
   const { data: evolucao} = useFetch(`/relatorios/evolucao-diaria?inicio=${mesAtual}-01&fim=${hoje}`);
   const { data: rentRegiao } = useFetch(`/relatorios/rentabilidade-regiao?mes=${mesAtual}`);
   const { data: fechamento } = useFetch(`/relatorios/fechamento-mensal?mes=${mesAtual}`);
+  const { data: notif } = useFetch('/relatorios/notificacoes');
+  const { data: kmVeiculos } = useFetch(`/relatorios/km-por-veiculo?mes=${mesAtual}`);
 
   const fatRows   = fat || [];
   const evoRows   = (evolucao||[]).map(r=>({
@@ -49,6 +51,36 @@ export default function Dashboard() {
       </div>
 
       <div className="page-body">
+        {/* Alertas de vencimento */}
+        {notif && (Number(notif.pagar_vencidas?.c) > 0 || Number(notif.receber_vencidas?.c) > 0) && (
+          <div style={{padding:'12px 16px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'var(--radius)',marginBottom:16,fontSize:13,display:'flex',gap:16,flexWrap:'wrap'}}>
+            {Number(notif.pagar_vencidas?.c) > 0 && (
+              <span style={{color:'#DC2626'}}>
+                ⚠️ <strong>{notif.pagar_vencidas.c}</strong> conta(s) a pagar vencida(s) — {fmt(notif.pagar_vencidas.v)}
+              </span>
+            )}
+            {Number(notif.receber_vencidas?.c) > 0 && (
+              <span style={{color:'#DC2626'}}>
+                ⚠️ <strong>{notif.receber_vencidas.c}</strong> conta(s) a receber vencida(s) — {fmt(notif.receber_vencidas.v)}
+              </span>
+            )}
+          </div>
+        )}
+        {notif && (Number(notif.pagar_vencendo_7d?.c) > 0 || Number(notif.receber_vencendo_7d?.c) > 0) && (
+          <div style={{padding:'12px 16px',background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:'var(--radius)',marginBottom:16,fontSize:13,display:'flex',gap:16,flexWrap:'wrap'}}>
+            {Number(notif.pagar_vencendo_7d?.c) > 0 && (
+              <span style={{color:'#B45309'}}>
+                🔔 <strong>{notif.pagar_vencendo_7d.c}</strong> conta(s) a pagar vencendo nos próximos 7 dias — {fmt(notif.pagar_vencendo_7d.v)}
+              </span>
+            )}
+            {Number(notif.receber_vencendo_7d?.c) > 0 && (
+              <span style={{color:'#B45309'}}>
+                🔔 <strong>{notif.receber_vencendo_7d.c}</strong> conta(s) a receber vencendo nos próximos 7 dias — {fmt(notif.receber_vencendo_7d.v)}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* KPIs reais do banco */}
         <div className="metrics-grid cols-4 mb-20 fade-up">
           <div className="metric-card">
@@ -221,6 +253,31 @@ export default function Dashboard() {
                 <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--text3)'}}>Em aberto</span><span className="fw-600" style={{color:'var(--amber)'}}>{fmt(fechamento.pagar?.em_aberto)}</span></div>
                 <div style={{borderTop:'1px solid var(--border)',paddingTop:8,marginTop:4,display:'flex',justifyContent:'space-between'}}><span className="fw-600">Margem</span><span className="fw-600" style={{color:fechamento.margem>=0?'var(--green)':'var(--red)'}}>{fmt(fechamento.margem)}</span></div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* KM por veículo */}
+        {kmVeiculos && kmVeiculos.length > 0 && (
+          <div className="card fade-up" style={{marginTop:16}}>
+            <div className="section-header">
+              <span className="section-title">Controle de KM — mês atual</span>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Veículo</th><th>Tipo</th><th>Viagens</th><th>KM Total</th><th>KM Médio</th></tr></thead>
+                <tbody>
+                  {kmVeiculos.map(r=>(
+                    <tr key={r.placa}>
+                      <td className="font-mono fw-500">{r.placa}</td>
+                      <td><span className="badge badge-teal">{r.tipo}</span></td>
+                      <td>{r.viagens}</td>
+                      <td className="fw-600">{Number(r.km_total).toLocaleString('pt-BR')} km</td>
+                      <td style={{color:'var(--text2)'}}>{Number(r.km_medio).toFixed(0)} km</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

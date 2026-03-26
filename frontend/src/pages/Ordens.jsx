@@ -186,6 +186,15 @@ export default function Ordens() {
   }, [veiculoSelecionado, form.regiao]);
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
+  const onMotoristaChange = (id) => {
+    set('motorista_id', id);
+    // Auto-selecionar veículo padrão do motorista
+    const mot = (motoristas||[]).find(m => String(m.id) === String(id));
+    if (mot?.veiculo_padrao_id && !form.veiculo_id) {
+      set('veiculo_id', mot.veiculo_padrao_id);
+    }
+  };
+
   const onClienteChange = (id) => {
     set('cliente_id',id);
     const cli=(clientes||[]).find(c=>String(c.id)===String(id));
@@ -233,6 +242,8 @@ export default function Ordens() {
       if(visivel('obs') && form.obs) fd.append('obs',form.obs);
       fd.append('ajuda_diesel', visivel('ajuda_diesel') ? (form.ajuda_diesel||0) : 0);
       fd.append('taxa_descarga', visivel('taxa_descarga') ? (form.taxa_descarga||0) : 0);
+      if (form.km_saida) fd.append('km_saida', form.km_saida);
+      if (form.km_chegada) fd.append('km_chegada', form.km_chegada);
       fd.append('status', form.status||'pendente');
       if(visivel('anexo') && anexo) fd.append('anexo',anexo);
 
@@ -286,6 +297,8 @@ export default function Ordens() {
         taxa_descarga: ordemExistente.taxa_descarga || '',
         obs: ordemExistente.obs || '',
         status: ordemExistente.status || 'pendente',
+        km_saida: ordemExistente.km_saida || '',
+        km_chegada: ordemExistente.km_chegada || '',
       });
     } else {
       setEditingId(null);
@@ -483,7 +496,7 @@ export default function Ordens() {
 
                 {/* Motorista + Ajudante */}
                 <Field label={<span>Motorista <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                  <Select value={form.motorista_id||''} onChange={e=>set('motorista_id',e.target.value)}
+                  <Select value={form.motorista_id||''} onChange={e=>onMotoristaChange(e.target.value)}
                     options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
                 </Field>
                 <Field label="Ajudante">
@@ -526,6 +539,18 @@ export default function Ordens() {
 
               {/* Campos configuráveis */}
               <div className="form-grid cols-2" style={{marginBottom:14}}>
+                {/* Controle de KM */}
+                <Field label="KM Saída">
+                  <Input type="number" step="0.1" value={form.km_saida||''} onChange={e=>set('km_saida',e.target.value)} placeholder="Hodômetro saída" />
+                </Field>
+                <Field label="KM Chegada">
+                  <Input type="number" step="0.1" value={form.km_chegada||''} onChange={e=>set('km_chegada',e.target.value)} placeholder="Hodômetro chegada" />
+                </Field>
+                {form.km_saida && form.km_chegada && Number(form.km_chegada) > Number(form.km_saida) && (
+                  <div style={{gridColumn:'span 2',padding:'6px 12px',background:'var(--accent-lt)',borderRadius:'var(--radius)',fontSize:12,color:'var(--accent)'}}>
+                    Distância percorrida: <strong>{(Number(form.km_chegada) - Number(form.km_saida)).toFixed(1)} km</strong>
+                  </div>
+                )}
                 {visivel('nf') && (
                   <FL label="NF" obrig={obrigatorio('nf')}>
                     <Input value={form.nf||''} onChange={e=>set('nf',e.target.value)} />

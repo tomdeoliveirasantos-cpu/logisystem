@@ -203,4 +203,81 @@ router.get('/fechamento-mensal', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/relatorios/notificacoes — contas vencendo/vencidas
+router.get('/notificacoes', async (req, res, next) => {
+  try {
+    const hoje = new Date().toISOString().split('T')[0];
+    const em7dias = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
+
+    const [cpVencidas, crVencidas, cpVencendo, crVencendo] = await Promise.all([
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_pagar WHERE status='pendente' AND vencimento < $1", [hoje]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_receber WHERE status='pendente' AND vencimento < $1", [hoje]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_pagar WHERE status='pendente' AND vencimento BETWEEN $1 AND $2", [hoje, em7dias]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_receber WHERE status='pendente' AND vencimento BETWEEN $1 AND $2", [hoje, em7dias]),
+    ]);
+
+    res.json({
+      pagar_vencidas: cpVencidas.rows[0],
+      receber_vencidas: crVencidas.rows[0],
+      pagar_vencendo_7d: cpVencendo.rows[0],
+      receber_vencendo_7d: crVencendo.rows[0],
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/romaneio?data=2026-03-26&rota=4800
+router.get('/romaneio', async (req, res, next) => {
+  try {
+    const { data, rota } = req.query;
+    if (!data) return res.status(400).json({ error: 'Data é obrigatória' });
+
+    const params = [data];
+    const where = ['o.data = $1'];
+    if (rota) { params.push(rota); where.push(`o.numero_rota = $${params.length}`); }
+
+    const { rows } = await db.query(
+      `SELECT o.*, m.nome AS motorista_nome, v.placa, v.tipo AS veiculo_tipo,
+              c.nome AS cliente_cadastrado, c.logradouro, c.numero AS cli_numero, c.bairro, c.cidade
+       FROM logi_ordens_transporte o
+       LEFT JOIN logi_motoristas m ON m.id = o.motorista_id
+       LEFT JOIN logi_veiculos v ON v.id = o.veiculo_id
+       LEFT JOIN logi_clientes c ON c.id = o.cliente_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY o.numero_rota, o.seq`,
+      params
+    );
+
+    // Agrupar por rota
+    const rotas = {};
+    rows.forEach(r => {
+      const key = r.numero_rota || 'sem_rota';
+      if (!rotas[key]) rotas[key] = { rota: r.numero_rota, motorista: r.motorista_nome, veiculo: `${r.veiculo_tipo} - ${r.placa}`, paradas: [] };
+      rotas[key].paradas.push(r);
+    });
+
+    res.json({ data, rotas: Object.values(rotas) });
+  } catch (err) { next(err); }
+});
+
+// GET /api/relatorios/km-por-veiculo?mes=2026-03
+router.get('/km-por-veiculo', async (req, res, next) => {
+  try {
+    const { mes } = req.query;
+    const like = mes ? `${mes}%` : `${new Date().toISOString().slice(0,7)}%`;
+    const { rows } = await db.query(
+      `SELECT v.placa, v.tipo, v.modelo,
+              COUNT(o.id) AS viagens,
+              COALESCE(SUM(o.km_chegada - o.km_saida), 0) AS km_total,
+              COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio
+       FROM logi_ordens_transporte o
+       JOIN logi_veiculos v ON v.id = o.veiculo_id
+       WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
+       GROUP BY v.placa, v.tipo, v.modelo
+       ORDER BY km_total DESC`,
+      [like]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

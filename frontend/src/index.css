@@ -370,12 +370,26 @@ tbody tr:hover td { background: #F8FAFF; }
 
   .metrics-grid.cols-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
 
-  .page-header { padding: 0 12px; gap: 8px; height: auto; min-height: var(--header-h); padding-top: 8px; padding-bottom: 8px; }
+  .page-header { padding: 0 12px; gap: 8px; height: auto; min-height: var(--header-h); padding-top: 8px; padding-bottom: 8px; flex-wrap: wrap; }
 
   .form-grid.cols-3 { grid-template-columns: 1fr 1fr; }
 
   table { font-size: 12px; }
   thead th, tbody td { padding: 8px 10px; }
+
+  /* Filtros em wrap */
+  .page-header > div:last-child { flex-wrap: wrap; width: 100%; }
+}
+
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — TABLET (≤ 768px)
+══════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .form-grid.cols-2,
+  .form-grid.cols-3 { grid-template-columns: 1fr; }
+
+  .modal { max-width: 100% !important; }
+  .modal-body { padding: 14px; }
 }
 
 /* ══════════════════════════════════════════════════
@@ -409,23 +423,47 @@ tbody tr:hover td { background: #F8FAFF; }
 
   .mobile-menu-btn { display: flex; }
 
-  .page-body { padding: 12px; }
+  .page-body { padding: 10px; }
 
   .metrics-grid.cols-4,
   .metrics-grid.cols-3 { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+  .metrics-grid.cols-4 .metric-card,
+  .metrics-grid.cols-3 .metric-card { padding: 10px 12px; }
+  .metric-value { font-size: 18px; }
 
   .form-grid.cols-2,
-  .form-grid.cols-3 { grid-template-columns: 1fr; }
+  .form-grid.cols-3 { grid-template-columns: 1fr; gap: 10px; }
 
   .btn { padding: 7px 12px; font-size: 12px; }
 
-  .modal-backdrop { padding: 8px; align-items: flex-end; }
-  .modal { border-radius: var(--radius-lg) var(--radius-lg) 0 0; max-height: 92vh; }
+  .modal-backdrop { padding: 0; align-items: flex-end; }
+  .modal {
+    border-radius: 16px 16px 0 0; max-height: 92vh;
+    max-width: 100% !important;
+  }
+  .modal-body { padding: 14px; overflow-y: auto; }
+  .modal-header { padding: 12px 14px; }
+  .modal-footer { padding: 10px 14px; }
 
-  .page-header { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px; }
+  .page-header { flex-wrap: wrap; height: auto; padding: 8px 10px; gap: 6px; }
   .page-title { font-size: 15px; }
+  .page-desc { font-size: 11px; }
 
   .search-bar { max-width: 100%; min-width: 0; flex: 1; }
 
+  /* Selects e inputs maiores no mobile para toque */
+  .form-input, .form-select, .form-textarea {
+    padding: 10px 12px; font-size: 14px;
+    min-height: 42px;
+  }
+
+  /* Filtros da page-header empilham */
+  .page-header .form-input,
+  .page-header .form-select { font-size: 12px; min-height: 34px; padding: 6px 8px; }
+
   table { min-width: 600px; }
+
+  /* Cards no dashboard empilham */
+  .card { margin-bottom: 10px; }
+  .section-title { font-size: 13px; }
 }

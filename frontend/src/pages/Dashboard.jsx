@@ -105,7 +105,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}} className="mb-16">
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))',gap:16}} className="mb-16">
           {/* Evolução real */}
           <div className="card fade-up fade-up-1">
             <div className="section-header mb-12">
@@ -226,7 +226,7 @@ export default function Dashboard() {
 
         {/* Fechamento mensal */}
         {fechamento && (
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,marginTop:16}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))',gap:16,marginTop:16}}>
             <div className="card fade-up">
               <div className="section-title" style={{marginBottom:12}}>Operacional</div>
               <div style={{display:'grid',gap:8,fontSize:13}}>

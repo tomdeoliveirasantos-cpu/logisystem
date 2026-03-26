@@ -101,7 +101,7 @@ function FreteResumo({ veiculo, regiao, freteData, loading, temAjudante, valorAj
       {loading ? (
         <div style={{ fontSize: 12, color: 'var(--text3)' }}>Buscando valores...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
           <div style={{ padding: '10px 12px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 'var(--radius)' }}>
             <div style={{ fontSize: 10, color: '#16A34A', fontWeight: 600, marginBottom: 4 }}>RECEBER (Léo Madeiras)</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#16A34A' }}>
@@ -118,17 +118,16 @@ function FreteResumo({ veiculo, regiao, freteData, loading, temAjudante, valorAj
             </div>
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
               {regiao && valorPagar > 0 && `Frete: ${fmt(valorPagar)}`}
-              {regiao && valorPagar > 0 && ajudante > 0 && ` + Ajudante: ${fmt(ajudante)}`}
+              {regiao && valorPagar > 0 && ajudante > 0 && ` + Ajud: ${fmt(ajudante)}`}
               {!regiao && veiculo.ag_ft === 'agregado' && 'Selecione a região'}
               {veiculo.ag_ft === 'frota' && 'Frota própria'}
-              {!regiao && veiculo.ag_ft !== 'frota' && veiculo.ag_ft !== 'agregado' && ''}
             </div>
           </div>
         </div>
       )}
       {!regiao && veiculo.ag_ft === 'agregado' && (
         <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', fontStyle: 'italic' }}>
-          Preencha a região para calcular o frete a pagar automaticamente.
+          Preencha a região para calcular o frete a pagar.
         </div>
       )}
     </div>
@@ -484,21 +483,22 @@ export default function Ordens() {
                 )}
               </div>
 
-              {/* Linha 2: Cliente */}
-              <div className="form-grid cols-2" style={{marginBottom:14}}>
-                <div style={{gridColumn:'span 2'}}>
-                  <Field label={<span>Cliente <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                    <Select value={form.cliente_id||''} onChange={e=>onClienteChange(e.target.value)}
-                      options={(clientes||[]).map(c=>({value:c.id,label:c.nome+(c.cidade?` — ${c.cidade}`:'')}))}>
-                    </Select>
-                  </Field>
-                </div>
+              {/* Linha 2: Cliente, Motorista, Veículo, Região */}
+              <div style={{display:'grid',gap:14,marginBottom:14}}>
+                {/* Cliente - sempre full width */}
+                <Field label={<span>Cliente <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
+                  <Select value={form.cliente_id||''} onChange={e=>onClienteChange(e.target.value)}
+                    options={(clientes||[]).map(c=>({value:c.id,label:c.nome+(c.cidade?` — ${c.cidade}`:'')}))}>
+                  </Select>
+                </Field>
 
-                {/* Motorista + Ajudante */}
+                {/* Motorista - full width para caber o nome */}
                 <Field label={<span>Motorista <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Select value={form.motorista_id||''} onChange={e=>onMotoristaChange(e.target.value)}
                     options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
                 </Field>
+
+                {/* Ajudante - full width */}
                 <Field label="Ajudante">
                   <Input
                     value={form.ajudante_nome||''}
@@ -507,24 +507,28 @@ export default function Ordens() {
                   />
                 </Field>
 
-                {/* Veículo + Região */}
+                {/* Veículo - full width para caber placa + tipo + ag/ft */}
                 <Field label={<span>Veículo <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
                     options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚛 Agregado'}`}))} />
                 </Field>
+
+                {/* Região - full width */}
                 <Field label={<span>Região <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(define frete)</span></span>}>
                   <Select value={form.regiao||''} onChange={e=>set('regiao',e.target.value)}
                     options={(regioes||[]).map(r=>({value:r,label:r}))} />
                 </Field>
 
-                {/* Tipo + Pedido */}
-                <Field label="Tipo">
-                  <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
-                    options={['SOROCABA','INTEIRO','CORTE','AGREGADO'].map(v=>({value:v,label:v}))} />
-                </Field>
-                <Field label="Pedido">
-                  <Input value={form.pedido||''} onChange={e=>set('pedido',e.target.value)} />
-                </Field>
+                {/* Tipo + Pedido - 2 colunas no desktop, 1 no mobile */}
+                <div className="form-grid cols-2">
+                  <Field label="Tipo">
+                    <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
+                      options={['SOROCABA','INTEIRO','CORTE','AGREGADO'].map(v=>({value:v,label:v}))} />
+                  </Field>
+                  <Field label="Pedido">
+                    <Input value={form.pedido||''} onChange={e=>set('pedido',e.target.value)} />
+                  </Field>
+                </div>
               </div>
 
               {/* ════ Card de resumo de frete ════ */}

@@ -291,6 +291,22 @@ router.patch('/:id/status', async (req, res, next) => {
 });
 
 // ── Importação em massa (planilha roteirização) ──────────
+// ── Checar pedidos duplicados (para preview na importação) ──
+router.post('/checar-duplicados', async (req, res, next) => {
+  try {
+    const { pedidos } = req.body;
+    if (!pedidos?.length) return res.json({ duplicados: [] });
+
+    const placeholders = pedidos.map((_, i) => `$${i + 1}`).join(',');
+    const { rows } = await db.query(
+      `SELECT DISTINCT pedido FROM logi_ordens_transporte WHERE pedido IN (${placeholders})`,
+      pedidos.map(String)
+    );
+    res.json({ duplicados: rows.map(r => r.pedido) });
+  } catch (err) { next(err); }
+});
+
+// ── Importação em massa (planilha roteirização) ──────────
 router.post('/importar', async (req, res, next) => {
   try {
     const { data, rotas } = req.body;

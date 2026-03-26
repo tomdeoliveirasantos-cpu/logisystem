@@ -11,7 +11,6 @@ function parsePlanilha(file) {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-        // Dados começam na linha 4 (index 4)
         const rotas = {};
         for (let i = 4; i < raw.length; i++) {
           const row = raw[i];
@@ -52,6 +51,7 @@ export default function Importacao() {
   const today = new Date().toISOString().split('T')[0];
   const [data, setData] = useState(today);
   const [rotas, setRotas] = useState(null);
+  const [duplicados, setDuplicados] = useState([]);
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
   const fileRef = useRef();
@@ -64,7 +64,27 @@ export default function Importacao() {
       const parsed = await parsePlanilha(file);
       setRotas(parsed);
       setResultado(null);
-      showToast(`${parsed.length} rotas com ${parsed.reduce((s,r) => s + r.paradas.length, 0)} paradas`);
+
+      // Checar duplicados imediatamente
+      const todosPedidos = [];
+      parsed.forEach(r => r.paradas.forEach(p => { if (p.pedido) todosPedidos.push(p.pedido); }));
+
+      if (todosPedidos.length) {
+        try {
+          const res = await api.post('/ordens/checar-duplicados', { pedidos: todosPedidos });
+          setDuplicados(res.duplicados || []);
+          const numDup = res.duplicados?.length || 0;
+          const total = todosPedidos.length;
+          if (numDup > 0) {
+            showToast(`${parsed.length} rotas encontradas. ${numDup} de ${total} pedidos já existem no sistema.`, 'error');
+          } else {
+            showToast(`${parsed.length} rotas com ${total} paradas — tudo novo!`);
+          }
+        } catch { setDuplicados([]); }
+      } else {
+        setDuplicados([]);
+        showToast(`${parsed.length} rotas encontradas`);
+      }
     } catch(err) {
       showToast('Erro ao ler planilha: ' + err.message, 'error');
     }
@@ -86,12 +106,20 @@ export default function Importacao() {
 
       const res = await api.post('/ordens/importar', payload);
       setResultado(res);
-      showToast(`${res.total} ordens importadas!`);
+      if (res.total > 0 && res.ignoradas > 0) {
+        showToast(`${res.total} importadas, ${res.ignoradas} ignoradas (duplicadas)`);
+      } else if (res.total > 0) {
+        showToast(`${res.total} ordens importadas!`);
+      } else {
+        showToast('Nenhuma ordem nova para importar (todas já existem)', 'error');
+      }
     } catch(e) { showToast('Erro: ' + e.message, 'error'); }
     finally { setImportando(false); }
   };
 
   const totalParadas = (rotas || []).reduce((s, r) => s + r.paradas.length, 0);
+  const totalNovas = (rotas || []).reduce((s, r) => s + r.paradas.filter(p => !duplicados.includes(p.pedido)).length, 0);
+  const totalDup = totalParadas - totalNovas;
 
   return (
     <div>
@@ -106,8 +134,8 @@ export default function Importacao() {
         {/* Upload */}
         <div className="card mb-16">
           <div style={{fontSize:12,color:'var(--text3)',marginBottom:12}}>
-            Faça o upload da planilha de roteirização. Todas as paradas serão importadas como <strong>ordens pendentes</strong>.
-            Depois, vá em <strong>Ordens de Transporte</strong> e edite cada rota para atribuir motorista, veículo e região.
+            Faça o upload da planilha de roteirização. As paradas serão importadas como <strong>ordens pendentes</strong>.
+            Depois, edite cada rota em <strong>Ordens de Transporte</strong> para atribuir motorista, veículo e região.
           </div>
           <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
             <div style={{flex:'1 1 140px'}}>
@@ -125,76 +153,114 @@ export default function Importacao() {
           </div>
         </div>
 
-        {/* Resultado */}
+        {/* Resultado da importação */}
         {resultado && (
           <div className="card mb-16" style={{background:'#F0FDF4',border:'1px solid #BBF7D0'}}>
             <div style={{fontSize:15,fontWeight:700,color:'#16A34A',marginBottom:8}}>
-              ✅ {resultado.total} ordens importadas com sucesso!
+              ✅ {resultado.total} ordens importadas!
             </div>
             {resultado.ignoradas > 0 && (
-              <div style={{fontSize:13,color:'#B45309',marginBottom:8,padding:'8px 12px',background:'#FEF3C7',borderRadius:'var(--radius)'}}>
-                ⚠️ <strong>{resultado.ignoradas} pedidos ignorados</strong> (já existem no sistema):
-                <div style={{fontSize:11,marginTop:4,color:'#92400E'}}>
-                  {resultado.duplicados.map(d => `Pedido ${d.pedido} (${d.cliente}, Rota ${d.rota})`).join(' | ')}
-                </div>
+              <div style={{padding:'8px 12px',background:'#FEF3C7',borderRadius:'var(--radius)',marginBottom:8,fontSize:12,color:'#B45309'}}>
+                ⚠️ {resultado.ignoradas} pedidos ignorados (já existiam)
               </div>
             )}
-            <div style={{fontSize:13,color:'#15803d',marginBottom:12}}>
-              Vá em Ordens de Transporte para atribuir motorista, veículo e região.
-            </div>
-            <div style={{display:'flex',gap:8}}>
-              <a href="/ordens" className="btn btn-primary" style={{textDecoration:'none'}}>
-                Ir para Ordens →
-              </a>
-              <button className="btn btn-ghost" onClick={()=>{setRotas(null);setResultado(null);if(fileRef.current)fileRef.current.value='';}}>
-                Importar outra planilha
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <a href="/ordens" className="btn btn-primary" style={{textDecoration:'none'}}>Ir para Ordens →</a>
+              <button className="btn btn-ghost" onClick={()=>{setRotas(null);setResultado(null);setDuplicados([]);if(fileRef.current)fileRef.current.value='';}}>
+                Importar outra
               </button>
             </div>
           </div>
         )}
 
-        {/* Preview resumido */}
+        {/* Preview */}
         {rotas && !resultado && (
           <>
+            {/* Resumo com alerta de duplicados */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
               <div>
-                <span style={{fontSize:14,fontWeight:600}}>{rotas.length} rotas</span>
-                <span style={{color:'var(--text3)',marginLeft:8}}>{totalParadas} paradas no total</span>
+                <span style={{fontSize:14,fontWeight:600}}>{rotas.length} rotas — {totalParadas} paradas</span>
+                {totalDup > 0 && (
+                  <span style={{marginLeft:8,fontSize:12,color:'#DC2626',fontWeight:600}}>
+                    ({totalDup} já existem)
+                  </span>
+                )}
               </div>
-              <button className="btn btn-primary" onClick={importar} disabled={importando}
-                style={{background:'#16a34a',boxShadow:'0 2px 8px rgba(22,163,74,.25)'}}>
-                {importando ? 'Importando...' : `✅ Importar ${totalParadas} ordens`}
+              <button className="btn btn-primary" onClick={importar} disabled={importando || totalNovas === 0}
+                style={{background: totalNovas > 0 ? '#16a34a' : '#9ca3af'}}>
+                {importando ? 'Importando...' : totalNovas > 0 ? `✅ Importar ${totalNovas} novas` : '⚠️ Todas já existem'}
               </button>
             </div>
 
-            <div className="card fade-up">
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Rota</th>
-                      <th>Paradas</th>
-                      <th>Placa (ref.)</th>
-                      <th>Operador (ref.)</th>
-                      <th>Peso total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rotas.map(r => (
-                      <tr key={r.numero_rota}>
-                        <td className="font-mono fw-600" style={{color:'var(--accent)'}}>{r.numero_rota}</td>
-                        <td>{r.paradas.length}</td>
-                        <td className="font-mono" style={{fontSize:11}}>{r.placa_ref || '—'}</td>
-                        <td style={{fontSize:12}}>{r.operador_ref ? r.operador_ref.substring(0, 25) : '—'}</td>
-                        <td style={{fontSize:12}}>
-                          {r.paradas.reduce((s, p) => s + (p.peso || 0), 0).toFixed(1)} kg
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Alerta geral */}
+            {totalDup > 0 && (
+              <div style={{padding:'10px 14px',background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:'var(--radius)',marginBottom:12,fontSize:12,color:'#B45309'}}>
+                ⚠️ <strong>{totalDup} pedidos</strong> já foram importados anteriormente e serão ignorados (marcados em vermelho abaixo).
               </div>
-            </div>
+            )}
+
+            {/* Tabela por rota */}
+            {rotas.map(rota => {
+              const dupCount = rota.paradas.filter(p => duplicados.includes(p.pedido)).length;
+              const newCount = rota.paradas.length - dupCount;
+              const todaDuplicada = dupCount === rota.paradas.length;
+
+              return (
+                <div key={rota.numero_rota} className="card mb-16 fade-up" style={todaDuplicada ? {opacity:0.5} : {}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:4}}>
+                    <div>
+                      <span style={{fontSize:15,fontWeight:700,color:'var(--accent)'}}>Rota {rota.numero_rota}</span>
+                      <span style={{fontSize:12,color:'var(--text3)',marginLeft:8}}>
+                        {rota.paradas.length} paradas — Placa: {rota.placa_ref || '—'}
+                      </span>
+                    </div>
+                    <div style={{display:'flex',gap:6}}>
+                      {newCount > 0 && (
+                        <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:600,background:'#dcfce7',color:'#16a34a'}}>
+                          {newCount} novas
+                        </span>
+                      )}
+                      {dupCount > 0 && (
+                        <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:600,background:'#fee2e2',color:'#dc2626'}}>
+                          {dupCount} duplicadas
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Seq</th><th>Pedido</th><th>Cliente</th><th>Região</th><th>Peso</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {rota.paradas.map((p, i) => {
+                          const isDup = duplicados.includes(p.pedido);
+                          return (
+                            <tr key={i} style={isDup ? {background:'#fef2f2',textDecoration:'line-through',opacity:0.6} : {}}>
+                              <td className="fw-600">{p.seq}</td>
+                              <td className="font-mono" style={{fontSize:10}}>{p.pedido || '—'}</td>
+                              <td style={{fontSize:12}}>{p.cliente_nome}</td>
+                              <td style={{fontSize:12}}>{p.regiao || '—'}</td>
+                              <td style={{fontSize:12}}>{p.peso ? p.peso.toFixed(1)+' kg' : '—'}</td>
+                              <td>
+                                {isDup ? (
+                                  <span style={{padding:'2px 8px',borderRadius:99,fontSize:10,fontWeight:600,background:'#fee2e2',color:'#dc2626'}}>
+                                    Já existe
+                                  </span>
+                                ) : (
+                                  <span style={{padding:'2px 8px',borderRadius:99,fontSize:10,fontWeight:600,background:'#dcfce7',color:'#16a34a'}}>
+                                    Nova
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
           </>
         )}
 

@@ -485,11 +485,12 @@ export default function Ordens() {
                 </div>
               )}
 
-              {/* Linha 1: Data + Rota + Seq */}
-              <div style={{display:'grid',gridTemplateColumns:'3fr 2fr 1fr',gap:8,marginBottom:14}}>
+              {/* Linha 1: Data (full) + Rota/Seq lado a lado */}
+              <div style={{display:'grid',gap:10,marginBottom:14}}>
                 <Field label={<span>Data <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Input type="date" value={form.data||today} onChange={e=>set('data',e.target.value)} />
                 </Field>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 80px',gap:8}}>
                 {visivel('numero_rota') && (
                   <FL label="Nº da Rota" obrig={obrigatorio('numero_rota')}>
                     <Input type="number" value={form.numero_rota||''} onChange={e=>set('numero_rota',e.target.value)} placeholder="4800" />
@@ -500,6 +501,7 @@ export default function Ordens() {
                     <Input type="number" value={form.seq||1} onChange={e=>set('seq',e.target.value)} min={1} />
                   </FL>
                 )}
+                </div>
               </div>
 
               {/* Linha 2: Cliente, Motorista, Veículo, Região */}

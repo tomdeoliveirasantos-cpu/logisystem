@@ -485,8 +485,8 @@ export default function Ordens() {
                 </div>
               )}
 
-              {/* Linha 1: Data + Rota + Seq — sempre em linha (campos curtos) */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:10,marginBottom:14}}>
+              {/* Linha 1: Data + Rota + Seq */}
+              <div style={{display:'grid',gridTemplateColumns:'3fr 2fr 1fr',gap:8,marginBottom:14}}>
                 <Field label={<span>Data <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                   <Input type="date" value={form.data||today} onChange={e=>set('data',e.target.value)} />
                 </Field>

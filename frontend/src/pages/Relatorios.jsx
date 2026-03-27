@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
+import { ExportBtn } from '../components/UI';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Cell,
@@ -103,7 +104,13 @@ export default function Relatorios() {
               </div>
 
               <div className="card fade-up fade-up-2">
-                <div className="section-title mb-12">Detalhamento por tipo de veículo</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div className="section-title">Detalhamento por tipo de veículo</div>
+                  <ExportBtn rows={fatRows} filename="faturamento_por_veiculo" columns={[
+                    {key:'veiculo_tipo',label:'Veículo'},{key:'total_rotas',label:'Rotas'},
+                    {key:'entregas_ok',label:'Entregas'},{key:'devolucoes',label:'Devoluções'},
+                    {key:'valor_receber',label:'Faturado',fmt:v=>fmt(v)},{key:'margem',label:'Margem',fmt:v=>fmt(v)},
+                  ]} />
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>Veículo</th><th>Rotas</th><th>Entregas</th><th>Dev.</th><th>Faturado</th><th>Margem</th></tr></thead>
@@ -128,7 +135,13 @@ export default function Relatorios() {
 
         {tab === 'pagar' && (
           <div className="card fade-up">
-            <div className="section-title mb-12">Contas a Pagar por Transportadora</div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div className="section-title">Contas a Pagar por Transportadora</div>
+              <ExportBtn rows={cpR||[]} filename="contas_pagar" columns={[
+                {key:'transportadora',label:'Transportadora'},{key:'lancamentos',label:'Lançamentos'},
+                {key:'total',label:'Total',fmt:v=>fmt(v)},{key:'em_aberto',label:'Em aberto',fmt:v=>fmt(v)},
+                {key:'pago',label:'Pago',fmt:v=>fmt(v)},{key:'vencido',label:'Vencido',fmt:v=>fmt(v)},
+              ]} />
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Transportadora</th><th>Lançamentos</th><th>Total</th><th>Em aberto</th><th>Pago</th><th>Vencido</th></tr></thead>
@@ -151,7 +164,13 @@ export default function Relatorios() {
 
         {tab === 'receber' && (
           <div className="card fade-up">
-            <div className="section-title mb-12">Contas a Receber por Cliente (Top 50)</div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div className="section-title">Contas a Receber por Cliente (Top 50)</div>
+              <ExportBtn rows={crR||[]} filename="contas_receber" columns={[
+                {key:'cliente',label:'Cliente'},{key:'lancamentos',label:'Lançamentos'},
+                {key:'total',label:'Total',fmt:v=>fmt(v)},{key:'em_aberto',label:'Em aberto',fmt:v=>fmt(v)},
+                {key:'recebido',label:'Recebido',fmt:v=>fmt(v)},{key:'vencido',label:'Vencido',fmt:v=>fmt(v)},
+              ]} />
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Cliente</th><th>Lançamentos</th><th>Total</th><th>Em aberto</th><th>Recebido</th><th>Vencido</th></tr></thead>
@@ -211,7 +230,15 @@ export default function Relatorios() {
 
             {/* KM por Região — principal para otimização de rotas */}
             <div className="card fade-up fade-up-1 mb-16">
-              <div className="section-title mb-12">KM por Região — Eficiência de Rotas</div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <div className="section-title">KM por Região — Eficiência de Rotas</div>
+                <ExportBtn rows={kmRegiao||[]} filename="km_por_regiao" columns={[
+                  {key:'regiao',label:'Região'},{key:'viagens',label:'Viagens'},
+                  {key:'km_total',label:'KM Total',fmt:v=>Number(v).toLocaleString('pt-BR')},
+                  {key:'km_medio',label:'KM Médio',fmt:v=>Number(v).toFixed(0)},
+                  {key:'faturado',label:'Faturado',fmt:v=>fmt(v)},
+                  {key:'receita_por_km',label:'R$/km',fmt:v=>'R$ '+Number(v).toFixed(2)},
+                ]} />
               <div style={{padding:'8px 12px',background:'var(--accent-lt)',borderRadius:'var(--radius)',marginBottom:12,fontSize:12,color:'var(--accent)'}}>
                 Regiões com KM médio alto e receita/km baixa podem indicar rotas que precisam ser otimizadas.
               </div>
@@ -248,7 +275,13 @@ export default function Relatorios() {
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))',gap:16}}>
               {/* KM por Veículo */}
               <div className="card fade-up fade-up-2">
-                <div className="section-title mb-12">KM por Veículo</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div className="section-title">KM por Veículo</div>
+                  <ExportBtn rows={kmVeiculo||[]} filename="km_por_veiculo" columns={[
+                    {key:'placa',label:'Placa'},{key:'tipo',label:'Tipo'},{key:'viagens',label:'Viagens'},
+                    {key:'km_total',label:'KM Total',fmt:v=>Number(v).toLocaleString('pt-BR')},
+                    {key:'km_medio',label:'KM Médio',fmt:v=>Number(v).toFixed(0)},
+                  ]} />
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>Veículo</th><th>Tipo</th><th>Viagens</th><th>KM Total</th><th>KM Médio</th></tr></thead>
@@ -269,7 +302,14 @@ export default function Relatorios() {
 
               {/* KM por Motorista */}
               <div className="card fade-up fade-up-2">
-                <div className="section-title mb-12">KM por Motorista</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div className="section-title">KM por Motorista</div>
+                  <ExportBtn rows={kmMotorista||[]} filename="km_por_motorista" columns={[
+                    {key:'motorista',label:'Motorista'},{key:'viagens',label:'Viagens'},
+                    {key:'km_total',label:'KM Total',fmt:v=>Number(v).toLocaleString('pt-BR')},
+                    {key:'km_medio',label:'KM Médio',fmt:v=>Number(v).toFixed(0)},
+                    {key:'regioes_atendidas',label:'Regiões'},
+                  ]} />
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>Motorista</th><th>Viagens</th><th>KM Total</th><th>KM Médio</th><th>Regiões</th></tr></thead>

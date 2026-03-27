@@ -141,3 +141,132 @@ export function useToast() {
   };
   return { toast, showToast: show };
 }
+
+// ── Botão Exportar com opções Excel e PDF ──
+export function ExportBtn({ rows, columns, filename }) {
+  const [open, setOpen] = useState(false);
+
+  const exportXLS = () => {
+    setOpen(false);
+    const header = columns.map(c => c.label);
+    const data = rows.map(r => columns.map(c => c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? '')));
+    const ws = window.XLSX.utils.aoa_to_sheet([header, ...data]);
+    // Larguras automáticas
+    ws['!cols'] = columns.map(c => ({ wch: Math.max(c.label.length, 12) }));
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, 'Dados');
+    window.XLSX.writeFile(wb, `${filename || 'export'}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+  };
+
+  const exportPDF = async () => {
+    setOpen(false);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const pdf = new jsPDF('l', 'mm', 'a4'); // landscape
+      const pw = 297, margin = 10;
+      const usable = pw - margin * 2;
+      let y = margin;
+
+      // Título
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(26, 39, 64);
+      pdf.text(filename || 'Relatório', margin, y + 6);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(107, 114, 128);
+      pdf.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, margin, y + 12);
+      y += 18;
+
+      // Calcular larguras proporcionais
+      const totalChars = columns.reduce((s, c) => s + Math.max(c.label.length, 8), 0);
+      const colWidths = columns.map(c => (Math.max(c.label.length, 8) / totalChars) * usable);
+
+      // Header da tabela
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(margin, y, usable, 7, 'F');
+      pdf.setDrawColor(226, 232, 240);
+      pdf.rect(margin, y, usable, 7, 'S');
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(55, 65, 81);
+      let cx = margin;
+      columns.forEach((col, i) => {
+        pdf.text(col.label, cx + 2, y + 5);
+        cx += colWidths[i];
+      });
+      y += 7;
+
+      // Linhas
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7);
+      rows.forEach((row, ri) => {
+        if (y > 195) { pdf.addPage(); y = margin; }
+        const rowH = 6;
+        if (ri % 2 === 1) { pdf.setFillColor(248, 249, 252); pdf.rect(margin, y, usable, rowH, 'F'); }
+        pdf.setDrawColor(240, 240, 240);
+        pdf.line(margin, y + rowH, margin + usable, y + rowH);
+        pdf.setTextColor(26, 39, 64);
+        cx = margin;
+        columns.forEach((col, i) => {
+          const val = col.fmt ? col.fmt(row[col.key]) : String(row[col.key] ?? '—');
+          pdf.text(val.substring(0, 40), cx + 2, y + 4);
+          cx += colWidths[i];
+        });
+        y += rowH;
+      });
+
+      // Download
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${filename || 'export'}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch(e) { console.error('Erro PDF:', e); }
+  };
+
+  if (!rows?.length) return null;
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(!open)}
+        style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        ⬇ Exportar
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
+          <div style={{
+            position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 99,
+            background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+            boxShadow: 'var(--shadow-md)', minWidth: 160, overflow: 'hidden',
+          }}>
+            <button onClick={exportXLS} style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px',
+              border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)',
+              fontFamily: 'inherit', textAlign: 'left',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+              <span style={{ fontSize: 16 }}>📊</span> Excel (.xlsx)
+            </button>
+            <div style={{ height: 1, background: 'var(--border)' }} />
+            <button onClick={exportPDF} style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px',
+              border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)',
+              fontFamily: 'inherit', textAlign: 'left',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+              <span style={{ fontSize: 16 }}>📄</span> PDF (.pdf)
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

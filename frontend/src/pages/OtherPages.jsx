@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
-import { StatusBadge, Modal, Field, Input, Select, Textarea, useToast, Toast } from '../components/UI';
+import { StatusBadge, Modal, Field, Input, Select, Textarea, useToast, Toast, ExportBtn } from '../components/UI';
 
 const fmt = v => v!==null ? new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v) : '—';
 const fmtDate = d => {
@@ -31,7 +31,9 @@ export function ContasReceber() {
   return (
     <div>
       <div className="page-header"><div><div className="page-title">Contas a Receber</div><div className="page-desc">Fretes cobrados dos clientes</div></div>
-        <div style={{display:'flex',gap:8}}>{xlsBtn('Receber',rows,cols)}</div>
+        <div style={{display:'flex',gap:8}}>
+          <ExportBtn rows={rows} filename="contas_receber" columns={cols.map(c=>({key:c.k,label:c.l,fmt:c.f}))} />
+        </div>
       </div>
       <div className="page-body">
         <div className="metrics-grid cols-3 mb-16 fade-up">
@@ -86,7 +88,7 @@ export function ContasPagar() {
             <option value="diaria_motorista">Diária Motorista</option>
             <option value="diaria_ajudante">Diária Ajudante</option>
           </select>
-          {xlsBtn('Pagar',rows,cols)}
+          <ExportBtn rows={rows} filename="contas_pagar" columns={cols.map(c=>({key:c.k,label:c.l,fmt:c.f}))} />
         </div>
       </div>
       <div className="page-body">

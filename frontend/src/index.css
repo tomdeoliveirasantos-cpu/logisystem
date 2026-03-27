@@ -125,6 +125,7 @@ h1, h2, h3, h4, h5, h6,
   color: var(--text2); padding: 6px;
   border-radius: 8px; flex-shrink: 0;
 }
+.mobile-topbar { display: none; }
 
 /* ── Sidebar ── */
 .sidebar-brand {
@@ -422,6 +423,7 @@ tbody tr:hover td { background: #F8FAFF; }
   .main-content { margin-left: 0 !important; }
 
   .mobile-menu-btn { display: flex; }
+  .mobile-topbar { display: flex !important; }
 
   .page-body { padding: 10px; }
 
@@ -431,11 +433,11 @@ tbody tr:hover td { background: #F8FAFF; }
   .metrics-grid.cols-3 .metric-card { padding: 10px 12px; }
   .metric-value { font-size: 18px; }
 
-  /* KPIs compactos — 4 em linha no mobile */
-  .metrics-compact { grid-template-columns: repeat(4, 1fr) !important; gap: 6px !important; }
-  .metrics-compact .metric-card { padding: 8px 6px !important; text-align: center; }
-  .metrics-compact .metric-label { font-size: 9px !important; margin-bottom: 2px; }
-  .metrics-compact .metric-value { font-size: 15px !important; }
+  /* KPIs compactos — 2x2 no mobile */
+  .metrics-compact { grid-template-columns: repeat(2, 1fr) !important; gap: 6px !important; }
+  .metrics-compact .metric-card { padding: 10px 8px !important; text-align: center; }
+  .metrics-compact .metric-label { font-size: 10px !important; margin-bottom: 2px; }
+  .metrics-compact .metric-value { font-size: 16px !important; }
 
   .form-grid.cols-2,
   .form-grid.cols-3 { grid-template-columns: 1fr; gap: 10px; }
@@ -476,6 +478,10 @@ tbody tr:hover td { background: #F8FAFF; }
   table { min-width: 600px; }
 
   /* Cards no dashboard empilham */
-  .card { margin-bottom: 10px; }
+  .card { margin-bottom: 10px; overflow-x: auto; }
   .section-title { font-size: 13px; }
+
+  /* Impedir scroll horizontal na página */
+  .page-body { overflow-x: hidden; }
+  .main-content { overflow-x: hidden; }
 }

@@ -123,9 +123,9 @@ function ProtectedApp() {
         />
         <div className={`main-content ${collapsed && !isMobile ? 'collapsed' : ''}`}>
           {/* Mobile top bar */}
-          <div style={{display:'none',alignItems:'center',gap:10,padding:'0 16px',height:56,background:'#fff',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:50}} className="mobile-topbar">
-            <button className="mobile-menu-btn" style={{display:'flex'}} onClick={()=>setMobileOpen(true)}>
-              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          <div className="mobile-topbar" style={{alignItems:'center',gap:10,padding:'0 16px',height:56,background:'#fff',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:50}}>
+            <button className="mobile-menu-btn" onClick={()=>setMobileOpen(true)}>
+              <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
             <span style={{fontSize:15,fontWeight:600,color:'#1A2740'}}>LogiSystem</span>
           </div>

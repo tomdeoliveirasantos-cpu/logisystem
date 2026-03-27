@@ -121,21 +121,22 @@ async function criarPDFBlob(romaneio, rotas) {
 
 // ════ Compartilhar ou baixar PDF ═════════════════════════════════════════════
 async function compartilharPDF(blob, nomeArquivo) {
-  // Tentar compartilhar como arquivo (mobile)
+  // Tentar compartilhar como arquivo (só mobile com suporte real)
   try {
-    if (navigator.share) {
+    const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    if (isMobile && navigator.share && navigator.canShare) {
       const file = new File([blob], nomeArquivo, { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file] });
         return 'shared';
       }
     }
   } catch(e) {
-    // Se cancelou o share, não é erro
     if (e.name === 'AbortError') return 'cancelled';
+    // Qualquer outro erro → fallback pro download
   }
 
-  // Fallback: download
+  // Download direto (desktop e fallback)
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

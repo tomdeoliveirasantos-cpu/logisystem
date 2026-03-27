@@ -4,7 +4,12 @@ import { api } from '../lib/api';
 import { StatusBadge, Modal, Field, Input, Select, Textarea, useToast, Toast } from '../components/UI';
 
 const fmt = v => v!==null ? new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v) : '—';
-const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+const fmtDate = d => {
+  if (!d) return '—';
+  const s = String(d).substring(0, 10); // pegar só YYYY-MM-DD
+  const dt = new Date(s + 'T12:00:00');
+  return isNaN(dt) ? '—' : dt.toLocaleDateString('pt-BR');
+};
 
 function xlsBtn(label, rows, cols) {
   return <button className="btn btn-ghost btn-sm" onClick={()=>{

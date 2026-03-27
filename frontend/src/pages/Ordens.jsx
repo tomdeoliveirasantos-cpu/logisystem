@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';
 import { api } from '../lib/api';
-import { StatusBadge, Field, Input, Select, useToast, Toast } from '../components/UI';
+import { StatusBadge, Field, Input, Select, useToast, Toast, ExportBtn } from '../components/UI';
 
 const STATUS_OPTS = [
   {value:'pendente',label:'Pendente'},
@@ -349,7 +349,14 @@ export default function Ordens() {
           <div className="page-title">Ordens de Transporte</div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          <button className="btn btn-ghost btn-sm" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
+          <ExportBtn rows={rows} filename="ordens_transporte" columns={[
+            {key:'data',label:'Data',fmt:v=>{if(!v)return'';const s=String(v).substring(0,10);const d=new Date(s+'T12:00:00');return isNaN(d)?'':d.toLocaleDateString('pt-BR')}},
+            {key:'numero_rota',label:'Rota'},{key:'cliente_nome',label:'Cliente'},
+            {key:'motorista_nome',label:'Motorista'},{key:'veiculo_tipo',label:'Veículo'},
+            {key:'placa',label:'Placa'},{key:'regiao',label:'Região'},
+            {key:'peso',label:'Peso (kg)',fmt:v=>v?Number(v).toFixed(1):''},
+            {key:'nf',label:'NF'},{key:'status',label:'Status'},
+          ]} />
           <button className="btn btn-primary" onClick={openModal}>+ Nova Ordem</button>
         </div>
       </div>

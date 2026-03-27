@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
-import { StatusBadge, Modal, Field, Input, Select, useToast, Toast, Spinner } from '../components/UI';
+import { StatusBadge, Modal, Field, Input, Select, useToast, Toast, Spinner, ExportBtn } from '../components/UI';
 
 const EMPTY = {
   nome: '', cnpj: '', tipo: 'terceiros',
@@ -64,6 +64,11 @@ export default function Transportadoras() {
             <span className="search-icon">🔍</span>
             <input placeholder="Buscar por nome ou CNPJ..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <ExportBtn rows={rows} filename="transportadoras" columns={[
+            {key:'nome',label:'Nome'},{key:'cnpj',label:'CNPJ'},{key:'tipo',label:'Tipo'},
+            {key:'email_operacional',label:'E-mail Op.'},{key:'email_financeiro',label:'E-mail Fin.'},
+            {key:'telefone_contato',label:'Telefone'},{key:'telefone_financeiro',label:'Tel. Fin.'},
+          ]} />
           <button className="btn btn-primary" onClick={() => open()}>+ Nova Transportadora</button>
         </div>
       </div>

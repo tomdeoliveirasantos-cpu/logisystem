@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
-import { StatusBadge, Modal, Field, Input, Select, useToast, Toast } from '../components/UI';
+import { StatusBadge, Modal, Field, Input, Select, useToast, Toast, ExportBtn } from '../components/UI';
 
 const EMPTY = {
   nome:'', tipo_doc:'CNPJ', documento:'', email:'', telefone:'', contato:'',
@@ -75,7 +75,12 @@ export default function Clientes() {
             <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
             <input placeholder="Buscar por nome ou documento..." value={search} onChange={e=>setSearch(e.target.value)} />
           </div>
-          <button className="btn btn-ghost" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
+          <ExportBtn rows={rows} filename="clientes" columns={[
+            {key:'nome',label:'Nome'},{key:'tipo_doc',label:'Tipo'},{key:'documento',label:'Documento'},
+            {key:'telefone',label:'Telefone'},{key:'email',label:'E-mail'},{key:'contato',label:'Contato'},
+            {key:'cidade',label:'Cidade'},{key:'estado',label:'Estado'},{key:'logradouro',label:'Endereço'},
+            {key:'numero',label:'Número'},{key:'bairro',label:'Bairro'},{key:'cep',label:'CEP'},
+          ]} />
           <button className="btn btn-primary" onClick={()=>open()}>+ Novo Cliente</button>
         </div>
       </div>

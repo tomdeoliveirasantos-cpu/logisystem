@@ -146,7 +146,7 @@ export function Manutencoes() {
   return (
     <div>
       <div className="page-header"><div><div className="page-title">Controle de Manutenção</div><div className="page-desc">Preventiva e corretiva da frota</div></div>
-        <div style={{display:'flex',gap:8}}>{xlsBtn('Manutencoes',rows,cols)}<button className="btn btn-primary" onClick={()=>setModal(true)}>+ Registrar</button></div>
+        <div style={{display:'flex',gap:8}}><ExportBtn rows={rows} filename="manutencoes" columns={cols.map(c=>({key:c.k,label:c.l,fmt:c.f}))} /><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Registrar</button></div>
       </div>
       <div className="page-body">
         <div className="metrics-grid cols-3 mb-16 fade-up">
@@ -184,7 +184,7 @@ export function Multas() {
   return (
     <div>
       <div className="page-header"><div><div className="page-title">Controle de Multas</div><div className="page-desc">Infrações de trânsito da frota</div></div>
-        <div style={{display:'flex',gap:8}}>{xlsBtn('Multas',rows,cols)}<button className="btn btn-primary" onClick={()=>setModal(true)}>+ Registrar Multa</button></div>
+        <div style={{display:'flex',gap:8}}><ExportBtn rows={rows} filename="multas" columns={cols.map(c=>({key:c.k,label:c.l,fmt:c.f}))} /><button className="btn btn-primary" onClick={()=>setModal(true)}>+ Registrar Multa</button></div>
       </div>
       <div className="page-body">
         <div className="metrics-grid cols-3 mb-16 fade-up">
@@ -241,7 +241,11 @@ export function Veiculos() {
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e agregados</div></div><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Veículo</button></div>
+      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e agregados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="veiculos" columns={[
+            {key:'placa',label:'Placa'},{key:'tipo',label:'Tipo'},{key:'modelo',label:'Modelo'},
+            {key:'ano',label:'Ano'},{key:'renavam',label:'RENAVAM'},{key:'transportadora_nome',label:'Transportadora'},
+            {key:'ag_ft',label:'Ag/Frota'},
+          ]} /><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Veículo</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
         <thead><tr><th>Placa</th><th>Tipo</th><th>Modelo</th><th>Ano</th><th>RENAVAM</th><th>Transportadora</th><th>Ag/Ft</th><th></th></tr></thead>
         <tbody>
@@ -296,7 +300,10 @@ export function Motoristas() {
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Motoristas</div><div className="page-desc">Motoristas próprios e agregados</div></div><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Motorista</button></div>
+      <div className="page-header"><div><div className="page-title">Motoristas</div><div className="page-desc">Motoristas próprios e agregados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="motoristas" columns={[
+            {key:'nome',label:'Nome'},{key:'cnh',label:'CNH'},{key:'telefone',label:'Telefone'},
+            {key:'veiculo_padrao_placa',label:'Veículo Padrão'},{key:'transportadora_nome',label:'Transportadora'},
+          ]} /><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Motorista</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
         <thead><tr><th>Nome</th><th>CNH</th><th>Telefone</th><th>Veículo Padrão</th><th>Transportadora</th><th></th></tr></thead>
         <tbody>

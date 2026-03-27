@@ -348,38 +348,42 @@ export default function Ordens() {
         <div style={{flex:1}}>
           <div className="page-title">Ordens de Transporte</div>
         </div>
-        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <div className="search-bar">
-            <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            <input placeholder="Buscar..." value={filtBusca} onChange={e=>setFiltBusca(e.target.value)} />
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:4}}>
-            <input type="date" className="form-input" style={{width:140}} value={filtInicio} onChange={e=>setFiltInicio(e.target.value)} />
-            <span style={{color:'var(--text3)',fontSize:12}}>até</span>
-            <input type="date" className="form-input" style={{width:140}} value={filtFim} onChange={e=>setFiltFim(e.target.value)} />
-          </div>
-          <select className="form-select" style={{width:140}} value={filtStatus} onChange={e=>setFiltStatus(e.target.value)}>
-            <option value="">Todos status</option>
-            {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <select className="form-select" style={{width:150}} value={filtMotorista} onChange={e=>setFiltMotorista(e.target.value)}>
-            <option value="">Todos motoristas</option>
-            {(motoristas||[]).map(m=><option key={m.id} value={m.id}>{m.nome}</option>)}
-          </select>
-          <select className="form-select" style={{width:150}} value={filtVeiculo} onChange={e=>setFiltVeiculo(e.target.value)}>
-            <option value="">Todos veículos</option>
-            {(veiculos||[]).map(v=><option key={v.id} value={v.id}>{v.placa} — {v.tipo}</option>)}
-          </select>
-          {(filtInicio||filtFim||filtStatus!=='pendente'||filtMotorista||filtVeiculo||filtBusca) && (
-            <button className="btn btn-ghost btn-sm" onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');setFiltMotorista('');setFiltVeiculo('');setFiltBusca('');}}>✕</button>
-          )}
-          <button className="btn btn-ghost" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <button className="btn btn-ghost btn-sm" onClick={()=>exportXLS(rows)}>⬇ Excel</button>
           <button className="btn btn-primary" onClick={openModal}>+ Nova Ordem</button>
         </div>
       </div>
 
       <div className="page-body">
-        <div className="metrics-grid cols-4 metrics-compact fade-up" style={{marginBottom:12}}>
+        {/* Filtros */}
+        <div className="card" style={{padding:'12px 16px',marginBottom:12}}>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            <div className="search-bar" style={{flex:'1 1 160px',minWidth:120}}>
+              <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input placeholder="Buscar..." value={filtBusca} onChange={e=>setFiltBusca(e.target.value)} />
+            </div>
+            <input type="date" className="form-input" style={{width:130,flex:'0 0 auto'}} value={filtInicio} onChange={e=>setFiltInicio(e.target.value)} />
+            <input type="date" className="form-input" style={{width:130,flex:'0 0 auto'}} value={filtFim} onChange={e=>setFiltFim(e.target.value)} />
+            <select className="form-select" style={{width:120,flex:'0 0 auto'}} value={filtStatus} onChange={e=>setFiltStatus(e.target.value)}>
+              <option value="">Todos</option>
+              {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select className="form-select" style={{width:140,flex:'0 0 auto'}} value={filtMotorista} onChange={e=>setFiltMotorista(e.target.value)}>
+              <option value="">Motorista</option>
+              {(motoristas||[]).map(m=><option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+            <select className="form-select" style={{width:140,flex:'0 0 auto'}} value={filtVeiculo} onChange={e=>setFiltVeiculo(e.target.value)}>
+              <option value="">Veículo</option>
+              {(veiculos||[]).map(v=><option key={v.id} value={v.id}>{v.placa} — {v.tipo}</option>)}
+            </select>
+            {(filtInicio||filtFim||filtStatus!=='pendente'||filtMotorista||filtVeiculo||filtBusca) && (
+              <button className="btn btn-ghost btn-sm" style={{padding:'6px 10px'}} onClick={()=>{setFiltInicio('');setFiltFim('');setFiltStatus('pendente');setFiltMotorista('');setFiltVeiculo('');setFiltBusca('');}}>✕ Limpar</button>
+            )}
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="metrics-grid cols-4 fade-up" style={{marginBottom:12}}>
           {[
             {label:'Total',val:rows.length,cls:'',color:'var(--text)'},
             {label:'Entregues',val:rows.filter(r=>r.status==='entregue').length,cls:'green',color:'var(--green)'},

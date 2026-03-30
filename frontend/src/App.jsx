@@ -13,6 +13,8 @@ import Parametros from './pages/Parametros';
 import TabelaFretesPage from './pages/TabelaFretes';
 import Romaneio from './pages/Romaneio';
 import Importacao from './pages/Importacao';
+import CadastroMotoristaPublico from './pages/CadastroMotoristaPublico';
+import CadastrosMotorista from './pages/CadastrosMotorista';
 import {
   ContasReceber, ContasPagar,
   Manutencoes, Multas, Veiculos, Motoristas,
@@ -109,7 +111,7 @@ function ProtectedApp() {
   const isMobile = window.innerWidth <= 640;
 
   return (
-    <BrowserRouter>
+    <>
       <div className="app-shell">
         <Sidebar
           collapsed={collapsed}
@@ -145,6 +147,7 @@ function ProtectedApp() {
             <Route path="/relatorios" element={podeAcessar('relatorios') ? <Relatorios /> : <Navigate to="/" />} />
             <Route path="/romaneio" element={podeAcessar('relatorios') ? <Romaneio /> : <Navigate to="/" />} />
             <Route path="/importar" element={podeAcessar('ordens') ? <Importacao /> : <Navigate to="/" />} />
+            <Route path="/cadastros-motorista" element={podeAcessar('motoristas') ? <CadastrosMotorista /> : <Navigate to="/" />} />
             <Route path="/usuarios" element={podeAcessar('usuarios') ? <Usuarios /> : <Navigate to="/" />} />
             <Route path="/parametros" element={podeAcessar('usuarios') ? <Parametros /> : <Navigate to="/" />} />
           </Routes>
@@ -156,10 +159,17 @@ function ProtectedApp() {
           .mobile-topbar { display: flex !important; }
         }
       `}</style>
-    </BrowserRouter>
+    </>
   );
 }
 
 export default function App() {
-  return <AuthProvider><ProtectedApp /></AuthProvider>;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/cadastro-motorista/:token" element={<CadastroMotoristaPublico />} />
+        <Route path="/*" element={<AuthProvider><ProtectedApp /></AuthProvider>} />
+      </Routes>
+    </BrowserRouter>
+  );
 }

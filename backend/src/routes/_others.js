@@ -80,9 +80,11 @@ manutencoesRouter.get('/', async (req, res, next) => {
     if (veiculo_id) { params.push(veiculo_id); where.push(`m.veiculo_id = $1`); }
     const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const { rows } = await db.query(
-      `SELECT m.*, v.placa, v.modelo, v.tipo AS veiculo_tipo
+      `SELECT m.*, v.placa, v.modelo, v.tipo AS veiculo_tipo,
+              f.nome AS fornecedor_nome
        FROM logi_manutencoes m
        JOIN logi_veiculos v ON v.id = m.veiculo_id
+       LEFT JOIN logi_fornecedores f ON f.id = m.fornecedor_id
        ${wc} ORDER BY m.data_manutencao DESC`, params
     );
     res.json(rows);
@@ -92,17 +94,17 @@ manutencoesRouter.get('/', async (req, res, next) => {
 manutencoesRouter.post('/', upload.single('orcamento_anexo'), async (req, res, next) => {
   try {
     const { veiculo_id, tipo_manutencao, componente, descricao,
-            valor_orcamento, aprovado_por, data_manutencao, data_vencimento, fornecedor } = req.body;
+            valor_orcamento, aprovado_por, data_manutencao, data_vencimento, fornecedor_id } = req.body;
     const orcamento_anexo = req.file ? `manutencoes/${req.file.filename}` : null;
     const { rows } = await db.query(
       `INSERT INTO logi_manutencoes
         (veiculo_id, tipo_manutencao, componente, descricao,
          valor_orcamento, aprovado_por, data_manutencao, data_vencimento,
-         fornecedor, orcamento_anexo)
+         fornecedor_id, orcamento_anexo)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [veiculo_id, tipo_manutencao, componente, descricao,
        valor_orcamento, aprovado_por, data_manutencao || new Date(), data_vencimento || null,
-       fornecedor || null, orcamento_anexo]
+       fornecedor_id || null, orcamento_anexo]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }

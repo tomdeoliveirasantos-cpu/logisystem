@@ -112,6 +112,80 @@ export function Select({ options = [], ...props }) {
   );
 }
 
+export function SelectAdd({ options = [], onAdd, addTitle = 'Cadastro rápido', addFields = [], ...props }) {
+  const [open, setOpen] = useState(false);
+  const [addForm, setAddForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const setF = (k, v) => setAddForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const newId = await onAdd(addForm);
+      setOpen(false);
+      setAddForm({});
+      if (newId && props.onChange) {
+        props.onChange({ target: { value: String(newId) } });
+      }
+    } catch (e) { alert(e.message || 'Erro ao salvar'); }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ flex: 1 }}>
+          <select className="form-select" {...props}>
+            <option value="">Selecione...</option>
+            {options.map(o => (
+              <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>
+            ))}
+          </select>
+        </div>
+        <button type="button" onClick={() => setOpen(true)} className="btn btn-ghost btn-sm"
+          style={{ padding: '6px 10px', fontSize: 16, lineHeight: 1, borderRadius: 8, border: '1px dashed var(--border)', color: 'var(--accent)', flexShrink: 0 }}
+          title="Cadastro rápido">+</button>
+      </div>
+      {open && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,.45)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={e => e.target === e.currentTarget && setOpen(false)}>
+          <div style={{
+            background: 'var(--card)', borderRadius: 14, padding: 0, width: '90%', maxWidth: 420,
+            boxShadow: '0 20px 60px rgba(0,0,0,.3)', border: '1px solid var(--border)',
+          }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>{addTitle}</span>
+              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text3)', lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: '16px 20px' }}>
+              <div className="form-grid cols-2">
+                {addFields.map(f => (
+                  <div key={f.key} style={f.full ? { gridColumn: 'span 2' } : {}}>
+                    <Field label={f.label}>
+                      {f.type === 'select' ? (
+                        <Select value={addForm[f.key] || ''} onChange={e => setF(f.key, e.target.value)} options={f.options || []} />
+                      ) : (
+                        <Input value={addForm[f.key] || ''} onChange={e => setF(f.key, e.target.value)} placeholder={f.placeholder || ''} />
+                      )}
+                    </Field>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Textarea(props) {
   return <textarea className="form-textarea" {...props} />;
 }

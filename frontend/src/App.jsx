@@ -15,6 +15,7 @@ import Romaneio from './pages/Romaneio';
 import Importacao from './pages/Importacao';
 import CadastroMotoristaPublico from './pages/CadastroMotoristaPublico';
 import CadastrosMotorista from './pages/CadastrosMotorista';
+import Fornecedores from './pages/Fornecedores';
 import {
   ContasReceber, ContasPagar,
   Manutencoes, Multas, Veiculos, Motoristas,
@@ -138,6 +139,7 @@ function ProtectedApp() {
             <Route path="/transportadoras" element={podeAcessar('transportadoras') ? <Transportadoras /> : <Navigate to="/" />} />
             <Route path="/veiculos" element={podeAcessar('veiculos') ? <Veiculos /> : <Navigate to="/" />} />
             <Route path="/motoristas" element={podeAcessar('motoristas') ? <Motoristas /> : <Navigate to="/" />} />
+            <Route path="/fornecedores" element={podeAcessar('manutencoes') ? <Fornecedores /> : <Navigate to="/" />} />
             <Route path="/ordens" element={podeAcessar('ordens') ? <Ordens /> : <Navigate to="/" />} />
             <Route path="/manutencoes" element={podeAcessar('manutencoes') ? <Manutencoes /> : <Navigate to="/" />} />
             <Route path="/multas" element={podeAcessar('multas') ? <Multas /> : <Navigate to="/" />} />

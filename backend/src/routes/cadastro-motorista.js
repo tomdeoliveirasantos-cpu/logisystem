@@ -6,7 +6,10 @@ const multer = require('multer');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 
-const router = express.Router();
+// ══════════════════════════════════════════════════════
+// ROUTER PÚBLICO — formulário do motorista (sem auth)
+// ══════════════════════════════════════════════════════
+const publicRouter = express.Router();
 
 // ── Configuração Multer para uploads de documentos ──
 const uploadsDir = path.join(__dirname, '../../uploads/motoristas');
@@ -20,14 +23,14 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const prefix = file.fieldname; // cnh, cnpj_contrato_social, rntrc, comprovante_endereco
+    const prefix = file.fieldname;
     cb(null, `${prefix}_${Date.now()}${ext}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB por arquivo
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -44,86 +47,58 @@ const docFields = upload.fields([
   { name: 'assinatura', maxCount: 1 },
 ]);
 
-// ══════════════════════════════════════════════════════
-// ROTAS PÚBLICAS (sem auth) — acesso via token de convite
-// ══════════════════════════════════════════════════════
-
-// GET /api/cadastro-motorista/:token — Verificar se convite é válido
-router.get('/:token', async (req, res, next) => {
+// GET /api/cadastro-motorista/:token — Verificar convite
+publicRouter.get('/:token', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT id, token, status, nome_motorista, expires_at
-       FROM logi_cadastro_convites
-       WHERE token = $1`,
+       FROM logi_cadastro_convites WHERE token = $1`,
       [req.params.token]
     );
     if (!rows.length) return res.status(404).json({ error: 'Convite não encontrado' });
-
     const convite = rows[0];
-    if (convite.status === 'preenchido') {
-      return res.status(400).json({ error: 'Este formulário já foi preenchido' });
-    }
-    if (convite.expires_at && new Date(convite.expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Este convite expirou' });
-    }
+    if (convite.status === 'preenchido') return res.status(400).json({ error: 'Este formulário já foi preenchido' });
+    if (convite.expires_at && new Date(convite.expires_at) < new Date()) return res.status(400).json({ error: 'Este convite expirou' });
     res.json({ valid: true, nome_motorista: convite.nome_motorista });
   } catch (err) { next(err); }
 });
 
 // POST /api/cadastro-motorista/:token — Enviar formulário completo
-router.post('/:token', docFields, async (req, res, next) => {
+publicRouter.post('/:token', docFields, async (req, res, next) => {
   try {
-    // 1) Validar convite
     const { rows: convites } = await db.query(
       `SELECT id, status, expires_at FROM logi_cadastro_convites WHERE token = $1`,
       [req.params.token]
     );
     if (!convites.length) return res.status(404).json({ error: 'Convite não encontrado' });
     if (convites[0].status === 'preenchido') return res.status(400).json({ error: 'Já preenchido' });
-    if (convites[0].expires_at && new Date(convites[0].expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Convite expirado' });
-    }
+    if (convites[0].expires_at && new Date(convites[0].expires_at) < new Date()) return res.status(400).json({ error: 'Convite expirado' });
 
     const conviteId = convites[0].id;
     const data = JSON.parse(req.body.dados || '{}');
 
-    // 2) Coletar caminhos dos arquivos
     const arquivos = {};
     for (const campo of ['cnh', 'cnpj_contrato_social', 'rntrc', 'comprovante_endereco', 'assinatura']) {
-      if (req.files[campo] && req.files[campo][0]) {
+      if (req.files && req.files[campo] && req.files[campo][0]) {
         arquivos[campo] = `/uploads/motoristas/${req.params.token}/${req.files[campo][0].filename}`;
       }
     }
 
-    // 3) Inserir cadastro
     const { rows: cadastro } = await db.query(
       `INSERT INTO logi_motorista_cadastros (
         convite_id,
-        -- Pessoa Física
         nome, cpf, rg, cnh_numero, cnh_categoria, cnh_validade,
         endereco, bairro, cidade, estado, cep, telefone, email,
-        -- Pessoa Jurídica
         razao_social, cnpj, endereco_pj, bairro_pj, cidade_pj, estado_pj, cep_pj, data_abertura,
-        -- Veículo
         veiculo_placa, veiculo_modelo, veiculo_ano, veiculo_rntrc,
-        -- Dados Bancários
         banco, agencia, conta, tipo_conta, pix,
-        -- Documentos (caminhos)
         doc_cnh, doc_cnpj_contrato, doc_rntrc, doc_comprovante_endereco,
-        -- Assinatura
-        assinatura_path, assinatura_ip,
-        -- Status
-        status
+        assinatura_path, assinatura_ip, status
       ) VALUES (
-        $1,
-        $2,$3,$4,$5,$6,$7,
-        $8,$9,$10,$11,$12,$13,$14,
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
         $15,$16,$17,$18,$19,$20,$21,$22,
-        $23,$24,$25,$26,
-        $27,$28,$29,$30,$31,
-        $32,$33,$34,$35,
-        $36,$37,
-        'pendente'
+        $23,$24,$25,$26,$27,$28,$29,$30,$31,
+        $32,$33,$34,$35,$36,$37,'pendente'
       ) RETURNING *`,
       [
         conviteId,
@@ -137,7 +112,6 @@ router.post('/:token', docFields, async (req, res, next) => {
       ]
     );
 
-    // 4) Marcar convite como preenchido
     await db.query(
       `UPDATE logi_cadastro_convites SET status = 'preenchido', preenchido_em = NOW() WHERE id = $1`,
       [conviteId]
@@ -148,11 +122,12 @@ router.post('/:token', docFields, async (req, res, next) => {
 });
 
 // ══════════════════════════════════════════════════════
-// ROTAS PROTEGIDAS (com auth) — gestão interna
+// ROUTER PROTEGIDO — gestão interna (com auth via server.js)
 // ══════════════════════════════════════════════════════
+const adminRouter = express.Router();
 
-// GET /api/motorista-cadastros — Listar todos os cadastros
-router.get('/', authMiddleware, async (req, res, next) => {
+// GET / — Listar cadastros
+adminRouter.get('/', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT mc.*, cc.token, cc.nome_motorista AS convite_nome
@@ -164,8 +139,34 @@ router.get('/', authMiddleware, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /api/motorista-cadastros/:id — Detalhe de um cadastro
-router.get('/:id', authMiddleware, async (req, res, next) => {
+// GET /convites/todos — Listar convites
+adminRouter.get('/convites/todos', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT * FROM logi_cadastro_convites ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /convites/gerar — Gerar novo convite
+adminRouter.post('/convites/gerar', async (req, res, next) => {
+  try {
+    const { nome_motorista } = req.body;
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    const { rows } = await db.query(
+      `INSERT INTO logi_cadastro_convites (token, nome_motorista, criado_por, expires_at)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [token, nome_motorista || null, req.user?.nome || 'sistema', expiresAt]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// GET /:id — Detalhe de um cadastro
+adminRouter.get('/:id', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT mc.*, cc.token
@@ -179,8 +180,8 @@ router.get('/:id', authMiddleware, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// PATCH /api/motorista-cadastros/:id/validar — Validar documentos (checklist)
-router.patch('/:id/validar', authMiddleware, async (req, res, next) => {
+// PATCH /:id/validar — Checklist de documentos
+adminRouter.patch('/:id/validar', async (req, res, next) => {
   try {
     const { check_cnh, check_cnpj, check_rntrc, check_endereco, status } = req.body;
     const { rows } = await db.query(
@@ -201,38 +202,8 @@ router.patch('/:id/validar', authMiddleware, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── Convites ─────────────────────────────────────────
-
-// GET /api/motorista-convites — Listar convites
-router.get('/convites/todos', authMiddleware, async (req, res, next) => {
-  try {
-    const { rows } = await db.query(
-      `SELECT * FROM logi_cadastro_convites ORDER BY created_at DESC`
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
-
-// POST /api/motorista-convites — Gerar novo convite
-router.post('/convites/gerar', authMiddleware, async (req, res, next) => {
-  try {
-    const { nome_motorista } = req.body;
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // expira em 7 dias
-
-    const { rows } = await db.query(
-      `INSERT INTO logi_cadastro_convites (token, nome_motorista, criado_por, expires_at)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [token, nome_motorista || null, req.user?.nome || 'sistema', expiresAt]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
-});
-
-// ── Geração do contrato PDF ──────────────────────────
-
-router.get('/:id/contrato-pdf', authMiddleware, async (req, res, next) => {
+// GET /:id/contrato-pdf — Gerar PDF do contrato
+adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT mc.*, cc.token
@@ -251,23 +222,18 @@ router.get('/:id/contrato-pdf', authMiddleware, async (req, res, next) => {
     res.setHeader('Content-Disposition', `inline; filename="contrato_${cad.nome || 'motorista'}.pdf"`);
     doc.pipe(res);
 
-    // ── Cabeçalho ──
     doc.fontSize(14).font('Helvetica-Bold')
       .text('CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE TRANSPORTE', { align: 'center' });
     doc.moveDown(1.5);
 
-    // ── Identificação das partes ──
     doc.fontSize(10).font('Helvetica');
-    doc.text('Pelo presente instrumento particular, de um lado:', { continued: false });
+    doc.text('Pelo presente instrumento particular, de um lado:');
     doc.moveDown(0.5);
-
     doc.font('Helvetica-Bold').text('CONTRATANTE: ', { continued: true });
     doc.font('Helvetica').text('WsDevSoft Logística, pessoa jurídica de direito privado, doravante denominada CONTRATANTE.');
     doc.moveDown(0.5);
-
     doc.text('E, de outro lado:');
     doc.moveDown(0.5);
-
     doc.font('Helvetica-Bold').text('CONTRATADO: ', { continued: true });
     doc.font('Helvetica').text(
       `${cad.razao_social || cad.nome || '—'}, inscrita no CNPJ sob o nº ${cad.cnpj || '—'}, ` +
@@ -276,7 +242,6 @@ router.get('/:id/contrato-pdf', authMiddleware, async (req, res, next) => {
     );
     doc.moveDown(1);
 
-    // ── Cláusulas (resumido) ──
     const clausulas = [
       { titulo: 'CLÁUSULA 1 – DO OBJETO', texto: 'O presente contrato tem por objeto a prestação de serviços de transporte rodoviário de cargas pelo CONTRATADO, com fornecimento de veículo próprio e mão de obra para condução e operações correlatas, conforme demanda da CONTRATANTE, sem exclusividade.' },
       { titulo: 'CLÁUSULA 2 – DAS OBRIGAÇÕES DO CONTRATADO', texto: 'Conferir a carga no embarque e desembarque; zelar pela integridade da carga durante todo o transporte; arcar integralmente com as despesas do veículo utilizado; manter-se regularmente inscrito no RNTRC.' },
@@ -303,35 +268,26 @@ router.get('/:id/contrato-pdf', authMiddleware, async (req, res, next) => {
       doc.font('Helvetica').fontSize(9).text(c.texto, { align: 'justify' });
     }
 
-    // ── Dados do Motorista/CONTRATADO ──
     doc.addPage();
     doc.fontSize(12).font('Helvetica-Bold').text('DADOS DO CONTRATADO', { align: 'center' });
     doc.moveDown(1);
     doc.fontSize(9).font('Helvetica');
 
     const dados = [
-      ['Nome Completo', cad.nome],
-      ['CPF', cad.cpf],
-      ['RG', cad.rg],
+      ['Nome Completo', cad.nome], ['CPF', cad.cpf], ['RG', cad.rg],
       ['CNH', `${cad.cnh_numero || '—'} - Cat. ${cad.cnh_categoria || '—'} - Val. ${cad.cnh_validade ? new Date(cad.cnh_validade).toLocaleDateString('pt-BR') : '—'}`],
       ['Endereço', `${cad.endereco || '—'}, ${cad.bairro || '—'}, ${cad.cidade || '—'}/${cad.estado || '—'} - CEP: ${cad.cep || '—'}`],
-      ['Telefone', cad.telefone],
-      ['Email', cad.email],
+      ['Telefone', cad.telefone], ['Email', cad.email],
       ['', ''],
-      ['Razão Social', cad.razao_social],
-      ['CNPJ', cad.cnpj],
+      ['Razão Social', cad.razao_social], ['CNPJ', cad.cnpj],
       ['Endereço PJ', `${cad.endereco_pj || '—'}, ${cad.bairro_pj || '—'}, ${cad.cidade_pj || '—'}/${cad.estado_pj || '—'} - CEP: ${cad.cep_pj || '—'}`],
       ['Data de Abertura', cad.data_abertura ? new Date(cad.data_abertura).toLocaleDateString('pt-BR') : '—'],
       ['', ''],
-      ['Veículo - Placa', cad.veiculo_placa],
-      ['Veículo - Modelo', cad.veiculo_modelo],
-      ['Veículo - Ano', cad.veiculo_ano],
-      ['RNTRC', cad.veiculo_rntrc],
+      ['Veículo - Placa', cad.veiculo_placa], ['Veículo - Modelo', cad.veiculo_modelo],
+      ['Veículo - Ano', cad.veiculo_ano], ['RNTRC', cad.veiculo_rntrc],
       ['', ''],
-      ['Banco', cad.banco],
-      ['Agência', cad.agencia],
-      ['Conta', `${cad.conta || '—'} (${cad.tipo_conta || '—'})`],
-      ['PIX', cad.pix],
+      ['Banco', cad.banco], ['Agência', cad.agencia],
+      ['Conta', `${cad.conta || '—'} (${cad.tipo_conta || '—'})`], ['PIX', cad.pix],
     ];
 
     for (const [label, value] of dados) {
@@ -340,13 +296,11 @@ router.get('/:id/contrato-pdf', authMiddleware, async (req, res, next) => {
       doc.font('Helvetica').text(value || '—');
     }
 
-    // ── Data e assinatura ──
     doc.moveDown(2);
     const hoje = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
     doc.text(`Barueri/SP, ${hoje}`, { align: 'center' });
     doc.moveDown(2);
 
-    // Inserir assinatura se existir
     if (cad.assinatura_path) {
       const sigPath = path.join(__dirname, '../..', cad.assinatura_path);
       if (fs.existsSync(sigPath)) {
@@ -366,4 +320,4 @@ router.get('/:id/contrato-pdf', authMiddleware, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-module.exports = router;
+module.exports = { publicRouter, adminRouter };

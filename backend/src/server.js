@@ -20,7 +20,7 @@ const multasRouter          = require('./routes/multas');
 const financeiroRouter      = require('./routes/financeiro');
 const relatoriosRouter      = require('./routes/relatorios');
 const parametrosRouter      = require('./routes/parametros');
-const cadastroMotoristaRouter = require('./routes/cadastro-motorista');
+const { publicRouter: cadastroPublicRouter, adminRouter: cadastroAdminRouter } = require('./routes/cadastro-motorista');
 
 const app = express();
 
@@ -39,7 +39,7 @@ app.get('/health', async (_, res) => {
 app.use('/api/auth', authRouter);
 
 // Rotas públicas — formulário de cadastro de motorista (acesso via token)
-app.use('/api/cadastro-motorista', cadastroMotoristaRouter);
+app.use('/api/cadastro-motorista', cadastroPublicRouter);
 
 // Rotas protegidas (requerem token JWT)
 app.use('/api/clientes',        authMiddleware, clientesRouter);
@@ -52,7 +52,7 @@ app.use('/api/multas',          authMiddleware, multasRouter);
 app.use('/api/financeiro',      authMiddleware, financeiroRouter);
 app.use('/api/relatorios',      authMiddleware, relatoriosRouter);
 app.use('/api/parametros',      authMiddleware, parametrosRouter);
-app.use('/api/motorista-cadastros', authMiddleware, cadastroMotoristaRouter);
+app.use('/api/motorista-cadastros', authMiddleware, cadastroAdminRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

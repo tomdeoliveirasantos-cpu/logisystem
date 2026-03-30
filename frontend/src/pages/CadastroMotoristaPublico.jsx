@@ -9,20 +9,64 @@ const maskTel = v => { const d=v.replace(/\D/g,''); if(d.length<=10) return d.re
 const maskCEP = v => v.replace(/\D/g,'').replace(/(\d{5})(\d)/,'$1-$2').slice(0,9);
 const maskPlaca = v => v.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,7);
 
+/* ── Busca CEP via ViaCEP ── */
+async function buscaCEP(cep) {
+  const clean = cep.replace(/\D/g, '');
+  if (clean.length !== 8) return null;
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+    const data = await res.json();
+    if (data.erro) return null;
+    return {
+      endereco: data.logradouro || '',
+      bairro: data.bairro || '',
+      cidade: data.localidade || '',
+      estado: data.uf || '',
+    };
+  } catch { return null; }
+}
+
 export default function CadastroMotoristaPublico() {
   const token = window.location.pathname.split('/cadastro-motorista/')[1];
-  const [status, setStatus] = useState('loading'); // loading, valid, filled, expired, error
+  const [status, setStatus] = useState('loading');
   const [nomeConvite, setNomeConvite] = useState('');
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({});
   const [files, setFiles] = useState({});
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [buscandoCep, setBuscandoCep] = useState('');
   const canvasRef = useRef(null);
   const [drawing, setDrawing] = useState(false);
   const [hasSig, setHasSig] = useState(false);
 
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  // Busca CEP com preenchimento automático
+  const handleCEP = async (cepValue, prefix) => {
+    const cepField = prefix ? `cep_${prefix}` : 'cep';
+    set(cepField, maskCEP(cepValue));
+
+    const clean = cepValue.replace(/\D/g, '');
+    if (clean.length === 8) {
+      setBuscandoCep(cepField);
+      const dados = await buscaCEP(clean);
+      if (dados) {
+        if (prefix) {
+          set(`endereco_${prefix}`, dados.endereco);
+          set(`bairro_${prefix}`, dados.bairro);
+          set(`cidade_${prefix}`, dados.cidade);
+          set(`estado_${prefix}`, dados.estado);
+        } else {
+          set('endereco', dados.endereco);
+          set('bairro', dados.bairro);
+          set('cidade', dados.cidade);
+          set('estado', dados.estado);
+        }
+      }
+      setBuscandoCep('');
+    }
+  };
 
   // Verificar convite
   useEffect(() => {
@@ -61,62 +105,34 @@ export default function CadastroMotoristaPublico() {
     return { x: t.clientX - rect.left, y: t.clientY - rect.top };
   };
 
-  const startDraw = (e) => {
-    e.preventDefault();
-    setDrawing(true);
-    const ctx = canvasRef.current.getContext('2d');
-    const pos = getPos(e);
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-  };
-  const draw = (e) => {
-    if (!drawing) return;
-    e.preventDefault();
-    const ctx = canvasRef.current.getContext('2d');
-    const pos = getPos(e);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-    setHasSig(true);
-  };
+  const startDraw = (e) => { e.preventDefault(); setDrawing(true); const ctx = canvasRef.current.getContext('2d'); const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); };
+  const draw = (e) => { if (!drawing) return; e.preventDefault(); const ctx = canvasRef.current.getContext('2d'); const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); setHasSig(true); };
   const endDraw = () => setDrawing(false);
-  const clearSig = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasSig(false);
-  };
+  const clearSig = () => { const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); setHasSig(false); };
 
   // ── Submeter ──
   const submit = async () => {
     if (!hasSig) return alert('Por favor, assine o contrato antes de enviar.');
     setSending(true);
     try {
-      // Converter canvas para blob
       const canvas = canvasRef.current;
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-
       const fd = new FormData();
       fd.append('dados', JSON.stringify(form));
       fd.append('assinatura', blob, 'assinatura.png');
       for (const [key, file] of Object.entries(files)) {
         if (file) fd.append(key, file);
       }
-
-      const res = await fetch(`${API}/cadastro-motorista/${token}`, {
-        method: 'POST',
-        body: fd,
-      });
+      const res = await fetch(`${API}/cadastro-motorista/${token}`, { method: 'POST', body: fd });
       const data = await res.json();
       if (data.success) setSent(true);
       else alert(data.error || 'Erro ao enviar');
-    } catch (e) {
-      alert('Erro ao enviar: ' + e.message);
-    }
+    } catch (e) { alert('Erro ao enviar: ' + e.message); }
     setSending(false);
   };
 
   // ── Estilos ──
-  const styles = {
+  const s = {
     container: { minHeight:'100vh', background:'#f0f2f5', fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif' },
     card: { maxWidth:640, margin:'0 auto', padding:'0 16px' },
     header: { background:'linear-gradient(135deg,#1a2740 0%,#2563eb 100%)', color:'#fff', padding:'32px 24px', textAlign:'center', marginBottom:24 },
@@ -133,10 +149,11 @@ export default function CadastroMotoristaPublico() {
     dot: (active) => ({ width:10, height:10, borderRadius:'50%', background: active ? '#2563eb' : '#d1d5db', transition:'all .2s' }),
     fileBtn: { display:'flex', alignItems:'center', gap:8, padding:'10px 14px', border:'2px dashed #d1d5db', borderRadius:8, cursor:'pointer', fontSize:13, color:'#6b7280', background:'#fafafa', width:'100%', boxSizing:'border-box' },
     fileOk: { borderColor:'#22c55e', background:'#f0fdf4', color:'#15803d' },
+    cepLoading: { fontSize:11, color:'#2563eb', marginTop:2 },
   };
 
   if (status === 'loading') return (
-    <div style={{...styles.container, display:'flex', alignItems:'center', justifyContent:'center'}}>
+    <div style={{...s.container, display:'flex', alignItems:'center', justifyContent:'center'}}>
       <div style={{textAlign:'center'}}>
         <div style={{width:40,height:40,border:'3px solid #e5e7eb',borderTopColor:'#2563eb',borderRadius:'50%',animation:'spin .7s linear infinite',margin:'0 auto 12px'}}/>
         <div style={{fontSize:14,color:'#6b7280'}}>Verificando convite...</div>
@@ -146,7 +163,7 @@ export default function CadastroMotoristaPublico() {
   );
 
   if (status !== 'valid' && !sent) return (
-    <div style={{...styles.container, display:'flex', alignItems:'center', justifyContent:'center'}}>
+    <div style={{...s.container, display:'flex', alignItems:'center', justifyContent:'center'}}>
       <div style={{textAlign:'center', padding:40, background:'#fff', borderRadius:16, boxShadow:'0 2px 8px rgba(0,0,0,.1)', maxWidth:400, margin:16}}>
         <div style={{fontSize:48, marginBottom:16}}>{status === 'filled' ? '✅' : status === 'expired' ? '⏰' : '❌'}</div>
         <h2 style={{fontSize:18, marginBottom:8, color:'#1a2740'}}>
@@ -160,7 +177,7 @@ export default function CadastroMotoristaPublico() {
   );
 
   if (sent) return (
-    <div style={{...styles.container, display:'flex', alignItems:'center', justifyContent:'center'}}>
+    <div style={{...s.container, display:'flex', alignItems:'center', justifyContent:'center'}}>
       <div style={{textAlign:'center', padding:40, background:'#fff', borderRadius:16, boxShadow:'0 2px 8px rgba(0,0,0,.1)', maxWidth:400, margin:16}}>
         <div style={{fontSize:48, marginBottom:16}}>✅</div>
         <h2 style={{fontSize:18, marginBottom:8, color:'#1a2740'}}>Cadastro enviado!</h2>
@@ -175,8 +192,8 @@ export default function CadastroMotoristaPublico() {
     const hasFile = !!files[field];
     return (
       <div>
-        <label style={styles.label}>{label} *</label>
-        <label style={{...styles.fileBtn, ...(hasFile ? styles.fileOk : {})}}>
+        <label style={s.label}>{label} *</label>
+        <label style={{...s.fileBtn, ...(hasFile ? s.fileOk : {})}}>
           <span>{hasFile ? `✓ ${files[field].name}` : '📎 Selecionar arquivo (PDF, JPG, PNG)'}</span>
           <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{display:'none'}}
             onChange={e => setFiles(f => ({...f, [field]: e.target.files[0]}))} />
@@ -185,84 +202,85 @@ export default function CadastroMotoristaPublico() {
     );
   };
 
+  const CepHint = ({ field }) => buscandoCep === field ? <span style={s.cepLoading}>Buscando CEP...</span> : null;
+
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.logo}>LogiSystem</div>
-        <div style={styles.subtitle}>Cadastro de Motorista {nomeConvite ? `— ${nomeConvite}` : ''}</div>
+    <div style={s.container}>
+      <div style={s.header}>
+        <div style={s.logo}>LogiSystem</div>
+        <div style={s.subtitle}>Cadastro de Motorista {nomeConvite ? `— ${nomeConvite}` : ''}</div>
       </div>
 
-      <div style={styles.card}>
-        {/* Step dots */}
-        <div style={styles.stepDots}>
-          {stepTitles.map((_, i) => <div key={i} style={styles.dot(i <= step)} />)}
+      <div style={s.card}>
+        <div style={s.stepDots}>
+          {stepTitles.map((_, i) => <div key={i} style={s.dot(i <= step)} />)}
         </div>
-
         <div style={{fontSize:15, fontWeight:600, color:'#1a2740', marginBottom:16, textAlign:'center'}}>
           {step + 1}. {stepTitles[step]}
         </div>
 
         {/* STEP 0: Dados PF */}
         {step === 0 && (
-          <div style={styles.stepCard}>
-            <div style={styles.grid2}>
+          <div style={s.stepCard}>
+            <div style={s.grid2}>
               <div style={{gridColumn:'span 2'}}>
-                <label style={styles.label}>Nome Completo *</label>
-                <input style={styles.input} value={form.nome||''} onChange={e=>set('nome',e.target.value)} placeholder="Nome completo" />
+                <label style={s.label}>Nome Completo *</label>
+                <input style={s.input} value={form.nome||''} onChange={e=>set('nome',e.target.value)} placeholder="Nome completo" />
               </div>
               <div>
-                <label style={styles.label}>CPF *</label>
-                <input style={styles.input} value={form.cpf||''} onChange={e=>set('cpf',maskCPF(e.target.value))} placeholder="000.000.000-00" />
+                <label style={s.label}>CPF *</label>
+                <input style={s.input} value={form.cpf||''} onChange={e=>set('cpf',maskCPF(e.target.value))} placeholder="000.000.000-00" />
               </div>
               <div>
-                <label style={styles.label}>RG *</label>
-                <input style={styles.input} value={form.rg||''} onChange={e=>set('rg',e.target.value)} placeholder="RG" />
+                <label style={s.label}>RG *</label>
+                <input style={s.input} value={form.rg||''} onChange={e=>set('rg',e.target.value)} placeholder="RG" />
               </div>
               <div>
-                <label style={styles.label}>Nº CNH *</label>
-                <input style={styles.input} value={form.cnh_numero||''} onChange={e=>set('cnh_numero',e.target.value)} placeholder="Número da CNH" />
+                <label style={s.label}>Nº CNH *</label>
+                <input style={s.input} value={form.cnh_numero||''} onChange={e=>set('cnh_numero',e.target.value)} placeholder="Número da CNH" />
               </div>
               <div>
-                <label style={styles.label}>Categoria CNH *</label>
-                <select style={styles.input} value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}>
+                <label style={s.label}>Categoria CNH *</label>
+                <select style={s.input} value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}>
                   <option value="">Selecione</option>
                   {['A','B','C','D','E','AB','AC','AD','AE'].map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label style={styles.label}>Validade CNH *</label>
-                <input type="date" style={styles.input} value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)} />
+                <label style={s.label}>Validade CNH *</label>
+                <input type="date" style={s.input} value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)} />
               </div>
               <div>
-                <label style={styles.label}>Telefone *</label>
-                <input style={styles.input} value={form.telefone||''} onChange={e=>set('telefone',maskTel(e.target.value))} placeholder="(11) 99999-0000" />
+                <label style={s.label}>Telefone *</label>
+                <input style={s.input} value={form.telefone||''} onChange={e=>set('telefone',maskTel(e.target.value))} placeholder="(11) 99999-0000" />
               </div>
               <div style={{gridColumn:'span 2'}}>
-                <label style={styles.label}>Email</label>
-                <input type="email" style={styles.input} value={form.email||''} onChange={e=>set('email',e.target.value)} placeholder="email@exemplo.com" />
-              </div>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={styles.label}>Endereço *</label>
-                <input style={styles.input} value={form.endereco||''} onChange={e=>set('endereco',e.target.value)} placeholder="Rua, número" />
+                <label style={s.label}>Email</label>
+                <input type="email" style={s.input} value={form.email||''} onChange={e=>set('email',e.target.value)} placeholder="email@exemplo.com" />
               </div>
               <div>
-                <label style={styles.label}>Bairro</label>
-                <input style={styles.input} value={form.bairro||''} onChange={e=>set('bairro',e.target.value)} />
+                <label style={s.label}>CEP</label>
+                <input style={s.input} value={form.cep||''} onChange={e=>handleCEP(e.target.value, '')} placeholder="00000-000" />
+                <CepHint field="cep" />
               </div>
               <div>
-                <label style={styles.label}>Cidade *</label>
-                <input style={styles.input} value={form.cidade||''} onChange={e=>set('cidade',e.target.value)} />
-              </div>
-              <div>
-                <label style={styles.label}>Estado *</label>
-                <select style={styles.input} value={form.estado||''} onChange={e=>set('estado',e.target.value)}>
+                <label style={s.label}>Estado *</label>
+                <select style={s.input} value={form.estado||''} onChange={e=>set('estado',e.target.value)}>
                   <option value="">UF</option>
                   {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
+              <div style={{gridColumn:'span 2'}}>
+                <label style={s.label}>Endereço *</label>
+                <input style={s.input} value={form.endereco||''} onChange={e=>set('endereco',e.target.value)} placeholder="Rua, número" />
+              </div>
               <div>
-                <label style={styles.label}>CEP</label>
-                <input style={styles.input} value={form.cep||''} onChange={e=>set('cep',maskCEP(e.target.value))} placeholder="00000-000" />
+                <label style={s.label}>Bairro</label>
+                <input style={s.input} value={form.bairro||''} onChange={e=>set('bairro',e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Cidade *</label>
+                <input style={s.input} value={form.cidade||''} onChange={e=>set('cidade',e.target.value)} />
               </div>
             </div>
           </div>
@@ -270,42 +288,43 @@ export default function CadastroMotoristaPublico() {
 
         {/* STEP 1: Dados PJ */}
         {step === 1 && (
-          <div style={styles.stepCard}>
-            <div style={styles.grid2}>
+          <div style={s.stepCard}>
+            <div style={s.grid2}>
               <div style={{gridColumn:'span 2'}}>
-                <label style={styles.label}>Razão Social *</label>
-                <input style={styles.input} value={form.razao_social||''} onChange={e=>set('razao_social',e.target.value)} placeholder="Razão social da empresa" />
+                <label style={s.label}>Razão Social *</label>
+                <input style={s.input} value={form.razao_social||''} onChange={e=>set('razao_social',e.target.value)} placeholder="Razão social da empresa" />
               </div>
               <div>
-                <label style={styles.label}>CNPJ *</label>
-                <input style={styles.input} value={form.cnpj||''} onChange={e=>set('cnpj',maskCNPJ(e.target.value))} placeholder="00.000.000/0000-00" />
+                <label style={s.label}>CNPJ *</label>
+                <input style={s.input} value={form.cnpj||''} onChange={e=>set('cnpj',maskCNPJ(e.target.value))} placeholder="00.000.000/0000-00" />
               </div>
               <div>
-                <label style={styles.label}>Data de Abertura *</label>
-                <input type="date" style={styles.input} value={form.data_abertura||''} onChange={e=>set('data_abertura',e.target.value)} />
-              </div>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={styles.label}>Endereço PJ *</label>
-                <input style={styles.input} value={form.endereco_pj||''} onChange={e=>set('endereco_pj',e.target.value)} placeholder="Endereço da empresa" />
+                <label style={s.label}>Data de Abertura *</label>
+                <input type="date" style={s.input} value={form.data_abertura||''} onChange={e=>set('data_abertura',e.target.value)} />
               </div>
               <div>
-                <label style={styles.label}>Bairro</label>
-                <input style={styles.input} value={form.bairro_pj||''} onChange={e=>set('bairro_pj',e.target.value)} />
+                <label style={s.label}>CEP PJ</label>
+                <input style={s.input} value={form.cep_pj||''} onChange={e=>handleCEP(e.target.value, 'pj')} placeholder="00000-000" />
+                <CepHint field="cep_pj" />
               </div>
               <div>
-                <label style={styles.label}>Cidade *</label>
-                <input style={styles.input} value={form.cidade_pj||''} onChange={e=>set('cidade_pj',e.target.value)} />
-              </div>
-              <div>
-                <label style={styles.label}>Estado *</label>
-                <select style={styles.input} value={form.estado_pj||''} onChange={e=>set('estado_pj',e.target.value)}>
+                <label style={s.label}>Estado PJ *</label>
+                <select style={s.input} value={form.estado_pj||''} onChange={e=>set('estado_pj',e.target.value)}>
                   <option value="">UF</option>
                   {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
+              <div style={{gridColumn:'span 2'}}>
+                <label style={s.label}>Endereço PJ *</label>
+                <input style={s.input} value={form.endereco_pj||''} onChange={e=>set('endereco_pj',e.target.value)} placeholder="Endereço da empresa" />
+              </div>
               <div>
-                <label style={styles.label}>CEP</label>
-                <input style={styles.input} value={form.cep_pj||''} onChange={e=>set('cep_pj',maskCEP(e.target.value))} placeholder="00000-000" />
+                <label style={s.label}>Bairro PJ</label>
+                <input style={s.input} value={form.bairro_pj||''} onChange={e=>set('bairro_pj',e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Cidade PJ *</label>
+                <input style={s.input} value={form.cidade_pj||''} onChange={e=>set('cidade_pj',e.target.value)} />
               </div>
             </div>
           </div>
@@ -313,23 +332,23 @@ export default function CadastroMotoristaPublico() {
 
         {/* STEP 2: Veículo */}
         {step === 2 && (
-          <div style={styles.stepCard}>
-            <div style={styles.grid2}>
+          <div style={s.stepCard}>
+            <div style={s.grid2}>
               <div>
-                <label style={styles.label}>Placa *</label>
-                <input style={styles.input} value={form.veiculo_placa||''} onChange={e=>set('veiculo_placa',maskPlaca(e.target.value))} placeholder="ABC1D23" />
+                <label style={s.label}>Placa *</label>
+                <input style={s.input} value={form.veiculo_placa||''} onChange={e=>set('veiculo_placa',maskPlaca(e.target.value))} placeholder="ABC1D23" />
               </div>
               <div>
-                <label style={styles.label}>Modelo *</label>
-                <input style={styles.input} value={form.veiculo_modelo||''} onChange={e=>set('veiculo_modelo',e.target.value)} placeholder="Ex: VW Constellation" />
+                <label style={s.label}>Modelo *</label>
+                <input style={s.input} value={form.veiculo_modelo||''} onChange={e=>set('veiculo_modelo',e.target.value)} placeholder="Ex: VW Constellation" />
               </div>
               <div>
-                <label style={styles.label}>Ano *</label>
-                <input style={styles.input} value={form.veiculo_ano||''} onChange={e=>set('veiculo_ano',e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="2024" />
+                <label style={s.label}>Ano *</label>
+                <input style={s.input} value={form.veiculo_ano||''} onChange={e=>set('veiculo_ano',e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="2024" />
               </div>
               <div>
-                <label style={styles.label}>RNTRC (ANTT) *</label>
-                <input style={styles.input} value={form.veiculo_rntrc||''} onChange={e=>set('veiculo_rntrc',e.target.value)} placeholder="Nº RNTRC" />
+                <label style={s.label}>RNTRC (ANTT) *</label>
+                <input style={s.input} value={form.veiculo_rntrc||''} onChange={e=>set('veiculo_rntrc',e.target.value)} placeholder="Nº RNTRC" />
               </div>
             </div>
           </div>
@@ -337,31 +356,31 @@ export default function CadastroMotoristaPublico() {
 
         {/* STEP 3: Dados Bancários */}
         {step === 3 && (
-          <div style={styles.stepCard}>
-            <div style={styles.grid2}>
+          <div style={s.stepCard}>
+            <div style={s.grid2}>
               <div style={{gridColumn:'span 2'}}>
-                <label style={styles.label}>Banco *</label>
-                <input style={styles.input} value={form.banco||''} onChange={e=>set('banco',e.target.value)} placeholder="Ex: Bradesco, Itaú, Nubank..." />
+                <label style={s.label}>Banco *</label>
+                <input style={s.input} value={form.banco||''} onChange={e=>set('banco',e.target.value)} placeholder="Ex: Bradesco, Itaú, Nubank..." />
               </div>
               <div>
-                <label style={styles.label}>Agência</label>
-                <input style={styles.input} value={form.agencia||''} onChange={e=>set('agencia',e.target.value)} placeholder="0000" />
+                <label style={s.label}>Agência</label>
+                <input style={s.input} value={form.agencia||''} onChange={e=>set('agencia',e.target.value)} placeholder="0000" />
               </div>
               <div>
-                <label style={styles.label}>Conta</label>
-                <input style={styles.input} value={form.conta||''} onChange={e=>set('conta',e.target.value)} placeholder="00000-0" />
+                <label style={s.label}>Conta</label>
+                <input style={s.input} value={form.conta||''} onChange={e=>set('conta',e.target.value)} placeholder="00000-0" />
               </div>
               <div>
-                <label style={styles.label}>Tipo de Conta</label>
-                <select style={styles.input} value={form.tipo_conta||''} onChange={e=>set('tipo_conta',e.target.value)}>
+                <label style={s.label}>Tipo de Conta</label>
+                <select style={s.input} value={form.tipo_conta||''} onChange={e=>set('tipo_conta',e.target.value)}>
                   <option value="">Selecione</option>
                   <option value="corrente">Corrente</option>
                   <option value="poupanca">Poupança</option>
                 </select>
               </div>
               <div>
-                <label style={styles.label}>Chave PIX *</label>
-                <input style={styles.input} value={form.pix||''} onChange={e=>set('pix',e.target.value)} placeholder="CPF, CNPJ, email, telefone ou aleatória" />
+                <label style={s.label}>Chave PIX *</label>
+                <input style={s.input} value={form.pix||''} onChange={e=>set('pix',e.target.value)} placeholder="CPF, CNPJ, email, telefone ou aleatória" />
               </div>
             </div>
           </div>
@@ -370,7 +389,7 @@ export default function CadastroMotoristaPublico() {
         {/* STEP 4: Documentos + Contrato + Assinatura */}
         {step === 4 && (
           <div>
-            <div style={styles.stepCard}>
+            <div style={s.stepCard}>
               <h3 style={{fontSize:14, fontWeight:600, marginBottom:16, color:'#1a2740'}}>Upload de Documentos</h3>
               <div style={{display:'grid', gap:12}}>
                 <FileInput field="cnh" label="CNH (frente e verso)" />
@@ -380,7 +399,7 @@ export default function CadastroMotoristaPublico() {
               </div>
             </div>
 
-            <div style={styles.stepCard}>
+            <div style={s.stepCard}>
               <h3 style={{fontSize:14, fontWeight:600, marginBottom:8, color:'#1a2740'}}>Contrato de Prestação de Serviços</h3>
               <div style={{background:'#f8f9fa', borderRadius:8, padding:16, maxHeight:300, overflow:'auto', fontSize:11, color:'#4a5568', lineHeight:1.6, marginBottom:16, border:'1px solid #e5e7eb'}}>
                 <p><strong>CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE TRANSPORTE</strong></p>
@@ -403,30 +422,20 @@ export default function CadastroMotoristaPublico() {
                   onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
                   onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
                 />
-                {!hasSig && (
-                  <div style={{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', color:'#d1d5db', fontSize:14, pointerEvents:'none'}}>
-                    Assine aqui
-                  </div>
-                )}
+                {!hasSig && <div style={{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', color:'#d1d5db', fontSize:14, pointerEvents:'none'}}>Assine aqui</div>}
               </div>
-              <button onClick={clearSig} style={{...styles.btn, ...styles.btnGhost, marginTop:8, padding:'6px 16px', fontSize:12}}>Limpar assinatura</button>
+              <button onClick={clearSig} style={{...s.btn, ...s.btnGhost, marginTop:8, padding:'6px 16px', fontSize:12}}>Limpar assinatura</button>
             </div>
           </div>
         )}
 
         {/* Navegação */}
         <div style={{display:'flex', justifyContent:'space-between', marginBottom:40, marginTop:8}}>
-          {step > 0 ? (
-            <button style={{...styles.btn, ...styles.btnGhost}} onClick={()=>setStep(s=>s-1)}>← Anterior</button>
-          ) : <div/>}
+          {step > 0 ? <button style={{...s.btn, ...s.btnGhost}} onClick={()=>setStep(st=>st-1)}>← Anterior</button> : <div/>}
           {step < 4 ? (
-            <button style={{...styles.btn, ...styles.btnPrimary}} onClick={()=>setStep(s=>s+1)}>Próximo →</button>
+            <button style={{...s.btn, ...s.btnPrimary}} onClick={()=>setStep(st=>st+1)}>Próximo →</button>
           ) : (
-            <button
-              style={{...styles.btn, ...styles.btnPrimary, opacity: sending ? 0.6 : 1}}
-              onClick={submit}
-              disabled={sending}
-            >
+            <button style={{...s.btn, ...s.btnPrimary, opacity: sending ? 0.6 : 1}} onClick={submit} disabled={sending}>
               {sending ? 'Enviando...' : '✓ Enviar Cadastro'}
             </button>
           )}

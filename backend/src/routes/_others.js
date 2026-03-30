@@ -66,14 +66,14 @@ manutencoesRouter.get('/', async (req, res, next) => {
 manutencoesRouter.post('/', async (req, res, next) => {
   try {
     const { veiculo_id, tipo_manutencao, componente, descricao,
-            valor_orcamento, aprovado_por, data_manutencao } = req.body;
+            valor_orcamento, aprovado_por, data_manutencao, data_vencimento } = req.body;
     const { rows } = await db.query(
       `INSERT INTO logi_manutencoes
         (veiculo_id, tipo_manutencao, componente, descricao,
-         valor_orcamento, aprovado_por, data_manutencao)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+         valor_orcamento, aprovado_por, data_manutencao, data_vencimento)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [veiculo_id, tipo_manutencao, componente, descricao,
-       valor_orcamento, aprovado_por, data_manutencao || new Date()]
+       valor_orcamento, aprovado_por, data_manutencao || new Date(), data_vencimento || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }

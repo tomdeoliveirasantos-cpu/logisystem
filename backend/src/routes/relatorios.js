@@ -228,11 +228,21 @@ router.get('/notificacoes', async (req, res, next) => {
 // GET /api/relatorios/romaneio?data=2026-03-26&rota=4800
 router.get('/romaneio', async (req, res, next) => {
   try {
-    const { data, rota } = req.query;
-    if (!data) return res.status(400).json({ error: 'Data é obrigatória' });
+    const { data, data_inicio, data_fim, rota } = req.query;
+    if (!data && !data_inicio) return res.status(400).json({ error: "Data é obrigatória" });
 
-    const params = [data];
-    const where = ['o.data = $1'];
+    const params = [];
+    const where = [];
+    if (data_inicio && data_fim) {
+      params.push(data_inicio, data_fim);
+      where.push(`o.data >= $1 AND o.data <= $2`);
+    } else if (data_inicio) {
+      params.push(data_inicio);
+      where.push(`o.data >= $1`);
+    } else {
+      params.push(data);
+      where.push(`o.data = $1`);
+    }
     if (rota) { params.push(rota); where.push(`o.numero_rota = $${params.length}`); }
 
     const { rows } = await db.query(
@@ -255,7 +265,7 @@ router.get('/romaneio', async (req, res, next) => {
       rotas[key].paradas.push(r);
     });
 
-    res.json({ data, rotas: Object.values(rotas) });
+    res.json({ data: data || data_inicio, data_fim: data_fim || data || data_inicio, rotas: Object.values(rotas) });
   } catch (err) { next(err); }
 });
 

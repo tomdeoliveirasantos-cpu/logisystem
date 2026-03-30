@@ -151,7 +151,8 @@ async function compartilharPDF(blob, nomeArquivo) {
 // ════ Componente Principal ═══════════════════════════════════════════════════
 export default function Romaneio() {
   const today = new Date().toISOString().split('T')[0];
-  const [data, setData] = useState(today);
+  const [dataInicio, setDataInicio] = useState(today);
+  const [dataFim, setDataFim] = useState('');
   const [rota, setRota] = useState('');
   const [romaneio, setRomaneio] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -161,7 +162,9 @@ export default function Romaneio() {
   const buscar = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ data });
+      const params = new URLSearchParams();
+      if (dataFim) { params.set('data_inicio', dataInicio); params.set('data_fim', dataFim); }
+      else { params.set('data', dataInicio); }
       if (rota) params.set('rota', rota);
       const res = await api.get(`/relatorios/romaneio?${params}`);
       setRomaneio(res);
@@ -175,7 +178,7 @@ export default function Romaneio() {
     setGerando(`rota_${rotaData.rota}`);
     try {
       const blob = await criarPDFBlob(romaneio, [rotaData]);
-      const nome = `romaneio_${data}_rota_${rotaData.rota || 'sem'}.pdf`;
+      const nome = `romaneio_${dataInicio}${dataFim ? '_a_'+dataFim : ''}_rota_${rotaData.rota || 'sem'}.pdf`;
       const result = await compartilharPDF(blob, nome);
       if (result === 'downloaded') showToast('PDF baixado!');
       else if (result === 'shared') showToast('PDF compartilhado!');
@@ -188,7 +191,7 @@ export default function Romaneio() {
     setGerando('completo');
     try {
       const blob = await criarPDFBlob(romaneio, romaneio.rotas);
-      const nome = `romaneio_completo_${data}.pdf`;
+      const nome = `romaneio_completo_${dataInicio}${dataFim ? '_a_'+dataFim : ''}.pdf`;
       const result = await compartilharPDF(blob, nome);
       if (result === 'downloaded') showToast('PDF baixado!');
       else if (result === 'shared') showToast('PDF compartilhado!');
@@ -209,9 +212,14 @@ export default function Romaneio() {
         {/* Filtros */}
         <div className="card mb-16">
           <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
-            <div style={{flex:'1 1 150px'}}>
-              <Field label="Data *">
-                <Input type="date" value={data} onChange={e=>setData(e.target.value)} />
+            <div style={{flex:'1 1 140px'}}>
+              <Field label="Data Início *">
+                <Input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)} />
+              </Field>
+            </div>
+            <div style={{flex:'1 1 140px'}}>
+              <Field label="Data Fim">
+                <Input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)} />
               </Field>
             </div>
             <div style={{flex:'1 1 120px'}}>

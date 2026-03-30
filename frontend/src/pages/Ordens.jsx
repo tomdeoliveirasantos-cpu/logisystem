@@ -273,6 +273,9 @@ export default function Ordens() {
   const [filtVeiculo, setFiltVeiculo] = useState('');
   const [historicoModal, setHistoricoModal] = useState(null);
   const [historico, setHistorico] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [agrupModal, setAgrupModal] = useState(false);
+  const [agrupForm, setAgrupForm] = useState({});
 
   const openModal = (ordemExistente = null) => {
     if (ordemExistente) {
@@ -318,6 +321,54 @@ export default function Ordens() {
     setFreteData(null);
   };
 
+  // ── Agrupamento de romaneios ──
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleSelectAll = () => {
+    const pendentes = rows.filter(r => !r.grupo_viagem).map(r => r.id);
+    if (selectedIds.length === pendentes.length) setSelectedIds([]);
+    else setSelectedIds(pendentes);
+  };
+  const abrirAgrupar = () => {
+    if (selectedIds.length < 2) return showToast("Selecione pelo menos 2 ordens", "error");
+    setAgrupForm({});
+    setAgrupModal(true);
+  };
+  const confirmarAgrupar = async () => {
+    try {
+      const body = { ordem_ids: selectedIds };
+      if (agrupForm.motorista_id) body.motorista_id = agrupForm.motorista_id;
+      if (agrupForm.veiculo_id) body.veiculo_id = agrupForm.veiculo_id;
+      
+      /* Buscar tabela de frete se tiver veículo selecionado */
+      if (agrupForm.veiculo_id) {
+        const veic = (veiculos||[]).find(v => String(v.id) === String(agrupForm.veiculo_id));
+        if (veic) {
+          const ordSel = rows.filter(r => selectedIds.includes(r.id));
+          const regiao = ordSel.find(o => o.regiao)?.regiao || "";
+          if (regiao) {
+            try {
+              const frData = await api.get(`/financeiro/fretes/buscar?tipo_veiculo=${veic.tipo}\&regiao=${regiao}`);
+              if (frData?.pagar?.id) body.tabela_frete_id = frData.pagar.id;
+            } catch(e) { /* sem frete, segue */ }
+          }
+        }
+      }
+      
+      const res = await api.post("/ordens/agrupar", body);
+      showToast(`Romaneios agrupados! Grupo: ${res.grupo_viagem}`);
+      setSelectedIds([]); setAgrupModal(false); refetch();
+    } catch(e) { showToast(e.message, "error"); }
+  };
+  const desagrupar = async (grupo) => {
+    if (!confirm("Desagrupar estas ordens? O frete agrupado será cancelado.")) return;
+    try {
+      await api.post("/ordens/desagrupar", { grupo_viagem: grupo });
+      showToast("Ordens desagrupadas!"); refetch();
+    } catch(e) { showToast(e.message, "error"); }
+  };
+
   const showHistorico = async (ordemId) => {
     try {
       const data = await api.get(`/ordens/${ordemId}/historico`);
@@ -357,7 +408,12 @@ export default function Ordens() {
             {key:'peso',label:'Peso (kg)',fmt:v=>v?Number(v).toFixed(1):''},
             {key:'nf',label:'NF'},{key:'status',label:'Status'},
           ]} />
-          <button className="btn btn-primary" onClick={openModal}>+ Nova Ordem</button>
+          {selectedIds.length >= 2 && (
+            <button className="btn btn-primary" onClick={abrirAgrupar} style={{background:"#7c3aed"}}>
+              🔗 Agrupar ({selectedIds.length})
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={()=>openModal()}>+ Nova Ordem</button>
         </div>
       </div>
 
@@ -414,7 +470,9 @@ export default function Ordens() {
             <table>
               <thead>
                 <tr>
+                  <th style={{width:30}}><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length > 0 && selectedIds.length === rows.filter(r=>!r.grupo_viagem).length} style={{accentColor:"#7c3aed"}} /></th>
                   <th>Data</th>
+                  <th>Grupo</th>
                   {visivel('numero_rota') && <th>Rota</th>}
                   <th>Cliente</th>
                   <th>Motorista</th>
@@ -429,18 +487,24 @@ export default function Ordens() {
               </thead>
               <tbody>
                 {loading && Array.from({length:5}).map((_,i)=>(
-                  <tr key={i}>{Array.from({length:8}).map((_,j)=>(
+                  <tr key={i}>{Array.from({length:10}).map((_,j)=>(
                     <td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>
                   ))}</tr>
                 ))}
                 {!loading && !rows.length && (
-                  <tr><td colSpan={12} style={{textAlign:'center',color:'var(--text3)',padding:'40px 0',fontSize:13}}>
+                  <tr><td colSpan={14} style={{textAlign:'center',color:'var(--text3)',padding:'40px 0',fontSize:13}}>
                     Nenhuma ordem encontrada para este filtro
                   </td></tr>
                 )}
                 {rows.map(r=>(
                   <tr key={r.id}>
+                    <td><input type="checkbox" checked={selectedIds.includes(r.id)} onChange={()=>toggleSelect(r.id)} disabled={!!r.grupo_viagem} style={{accentColor:"#7c3aed"}} /></td>
                     <td className="font-mono" style={{fontSize:11}}>{fmtDate(r.data)}</td>
+                    <td>{r.grupo_viagem ? (
+                      <span onClick={()=>desagrupar(r.grupo_viagem)} title="Clique para desagrupar" style={{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:3}}>
+                        <span className="badge badge-purple" style={{background:"#7c3aed",color:"#fff",fontSize:10}}>{r.grupo_viagem}</span>
+                      </span>
+                    ) : <span style={{color:"var(--text3)",fontSize:11}}>—</span>}</td>
                     {visivel('numero_rota') && <td className="font-mono fw-600" style={{color:'var(--accent)'}}>{r.numero_rota}</td>}
                     <td>
                       <div className="fw-500 truncate" style={{maxWidth:150}}>{r.cliente_nome}</div>
@@ -688,6 +752,41 @@ export default function Ordens() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Agrupar Romaneios */}
+      {agrupModal && (
+        <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&setAgrupModal(false)}>
+          <div className="modal" style={{maxWidth:500}}>
+            <div className="modal-header">
+              <span className="modal-title">🔗 Agrupar Romaneios</span>
+              <button className="modal-close" onClick={()=>setAgrupModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{padding:"12px 16px",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:"var(--radius)",marginBottom:16,fontSize:13}}>
+                <strong>{selectedIds.length} ordens</strong> serão agrupadas numa única viagem.
+                <br/><span style={{fontSize:11,color:"#6B21A8"}}>O sistema vai cancelar os fretes individuais e gerar 1 frete único pro agregado.</span>
+              </div>
+              <Field label="Motorista (opcional — altera todas)">
+                <Select value={agrupForm.motorista_id||""} onChange={e=>{
+                  setAgrupForm(f=>({...f,motorista_id:e.target.value}));
+                  const mot=(motoristas||[]).find(m=>String(m.id)===String(e.target.value));
+                  if(mot?.veiculo_padrao_id) setAgrupForm(f=>({...f,veiculo_id:String(mot.veiculo_padrao_id)}));
+                }} options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
+              </Field>
+              <div style={{marginTop:12}}>
+                <Field label="Veículo (define o frete único)">
+                  <Select value={agrupForm.veiculo_id||""} onChange={e=>setAgrupForm(f=>({...f,veiculo_id:e.target.value}))}
+                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==="frota"?"🏠 Frota":"🚛 Agregado"}`}))} />
+                </Field>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={()=>setAgrupModal(false)}>Cancelar</button>
+              <button className="btn btn-primary" style={{background:"#7c3aed"}} onClick={confirmarAgrupar}>Confirmar Agrupamento</button>
             </div>
           </div>
         </div>

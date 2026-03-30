@@ -499,4 +499,133 @@ router.get('/:id/historico', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+
+// ── Agrupar romaneios (viagem conjunta) ──────────────────
+router.post('/agrupar', async (req, res, next) => {
+  try {
+    const { ordem_ids, motorista_id, veiculo_id, tabela_frete_id } = req.body;
+    if (!ordem_ids || ordem_ids.length < 2) {
+      return res.status(400).json({ error: 'Selecione pelo menos 2 ordens para agrupar' });
+    }
+
+    // Gerar ID do grupo (GV + timestamp curto)
+    const grupoId = 'GV' + Date.now().toString(36).toUpperCase();
+
+    // Buscar ordens para validar
+    const placeholders = ordem_ids.map((_, i) => `$${i + 1}`).join(',');
+    const { rows: ordens } = await db.query(
+      `SELECT id, data, numero_rota, regiao, motorista_id, veiculo_id, grupo_viagem
+       FROM logi_ordens_transporte WHERE id IN (${placeholders})`,
+      ordem_ids
+    );
+
+    if (ordens.length !== ordem_ids.length) {
+      return res.status(400).json({ error: 'Uma ou mais ordens não encontradas' });
+    }
+
+    // Verificar se alguma já está agrupada
+    const jaAgrupadas = ordens.filter(o => o.grupo_viagem);
+    if (jaAgrupadas.length) {
+      return res.status(400).json({
+        error: `Ordem(ns) ${jaAgrupadas.map(o => o.numero_rota || o.id).join(', ')} já estão agrupadas (${jaAgrupadas[0].grupo_viagem})`
+      });
+    }
+
+    // Atualizar as ordens com o grupo_viagem + motorista/veículo se fornecidos
+    const sets = ['grupo_viagem = $1'];
+    const baseParams = [grupoId];
+    
+    if (motorista_id) {
+      sets.push(`motorista_id = $${baseParams.length + 1}`);
+      baseParams.push(motorista_id);
+    }
+    if (veiculo_id) {
+      sets.push(`veiculo_id = $${baseParams.length + 1}`);
+      baseParams.push(veiculo_id);
+    }
+
+    for (const ordemId of ordem_ids) {
+      await db.query(
+        `UPDATE logi_ordens_transporte SET ${sets.join(', ')}, updated_at = NOW()
+         WHERE id = $${baseParams.length + 1}`,
+        [...baseParams, ordemId]
+      );
+    }
+
+    // Cancelar contas a pagar existentes das ordens agrupadas e gerar uma nova
+    // (paga 1 frete só pro agregado)
+    await db.query(
+      `UPDATE logi_contas_pagar SET status = 'cancelado'
+       WHERE ordem_id = ANY($1) AND status = 'pendente' AND tipo_lancamento = 'frete_agregado'`,
+      [ordem_ids]
+    );
+
+    // Gerar novo lançamento único de frete agregado se tiver tabela_frete_id
+    if (tabela_frete_id && veiculo_id) {
+      const { rows: fr } = await db.query(
+        'SELECT valor_base FROM logi_tabela_fretes WHERE id = $1', [tabela_frete_id]
+      );
+      if (fr.length) {
+        const { rows: vrows } = await db.query(
+          `SELECT v.tipo AS veiculo_tipo, t.id AS transportadora_id, t.nome AS transportadora_nome
+           FROM logi_veiculos v
+           LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
+           WHERE v.id = $1`, [veiculo_id]
+        );
+        const veiculo = vrows[0] || {};
+        const rotas = ordens.map(o => o.numero_rota).filter(Boolean).join('+');
+        const regioes = [...new Set(ordens.map(o => o.regiao).filter(Boolean))].join(', ');
+        const dataRef = ordens[0].data;
+
+        await db.query(
+          `INSERT INTO logi_contas_pagar
+            (ordem_id, tabela_frete_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento, grupo_viagem)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'frete_agregado', $8)`,
+          [
+            ordem_ids[0], // referencia a primeira ordem
+            tabela_frete_id,
+            veiculo.transportadora_id || null,
+            motorista_id || null,
+            fr[0].valor_base,
+            dataRef,
+            `Frete agrupado (${grupoId}) - Rotas ${rotas} - ${regioes} - ${veiculo.transportadora_nome || ''}`,
+            grupoId,
+          ]
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      grupo_viagem: grupoId,
+      ordens_agrupadas: ordem_ids.length,
+    });
+  } catch (err) { next(err); }
+});
+
+// ── Desagrupar romaneios ──────────────────────────────────
+router.post('/desagrupar', async (req, res, next) => {
+  try {
+    const { grupo_viagem } = req.body;
+    if (!grupo_viagem) return res.status(400).json({ error: 'grupo_viagem é obrigatório' });
+
+    // Limpar grupo_viagem das ordens
+    await db.query(
+      `UPDATE logi_ordens_transporte SET grupo_viagem = NULL, updated_at = NOW()
+       WHERE grupo_viagem = $1`,
+      [grupo_viagem]
+    );
+
+    // Cancelar conta a pagar do grupo
+    await db.query(
+      `UPDATE logi_contas_pagar SET status = 'cancelado'
+       WHERE grupo_viagem = $1 AND status = 'pendente'`,
+      [grupo_viagem]
+    );
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+
 module.exports = router;

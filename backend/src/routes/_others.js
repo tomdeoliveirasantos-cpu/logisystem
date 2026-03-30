@@ -1,5 +1,8 @@
 // ── motoristas.js ─────────────────────────────────────────────
 const express = require('express');
+const multer  = require('multer');
+const path    = require('path');
+const fs      = require('fs');
 const db = require('../db');
 
 const motoristasRouter = express.Router();
@@ -46,6 +49,29 @@ motoristasRouter.put('/:id', async (req, res, next) => {
 // ── manutencoes.js ────────────────────────────────────────────
 const manutencoesRouter = express.Router();
 
+// Configuração de upload para orçamentos
+const UPLOADS_DIR = path.join(__dirname, '../../uploads/manutencoes');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ts   = Date.now();
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${ts}_${safe}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (req, file, cb) => {
+    const ok = ['.pdf','.jpg','.jpeg','.png'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, ok.includes(ext));
+  },
+});
+
 manutencoesRouter.get('/', async (req, res, next) => {
   try {
     const { veiculo_id } = req.query;
@@ -63,17 +89,20 @@ manutencoesRouter.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-manutencoesRouter.post('/', async (req, res, next) => {
+manutencoesRouter.post('/', upload.single('orcamento_anexo'), async (req, res, next) => {
   try {
     const { veiculo_id, tipo_manutencao, componente, descricao,
-            valor_orcamento, aprovado_por, data_manutencao, data_vencimento } = req.body;
+            valor_orcamento, aprovado_por, data_manutencao, data_vencimento, fornecedor } = req.body;
+    const orcamento_anexo = req.file ? `manutencoes/${req.file.filename}` : null;
     const { rows } = await db.query(
       `INSERT INTO logi_manutencoes
         (veiculo_id, tipo_manutencao, componente, descricao,
-         valor_orcamento, aprovado_por, data_manutencao, data_vencimento)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+         valor_orcamento, aprovado_por, data_manutencao, data_vencimento,
+         fornecedor, orcamento_anexo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [veiculo_id, tipo_manutencao, componente, descricao,
-       valor_orcamento, aprovado_por, data_manutencao || new Date(), data_vencimento || null]
+       valor_orcamento, aprovado_por, data_manutencao || new Date(), data_vencimento || null,
+       fornecedor || null, orcamento_anexo]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }

@@ -1,6 +1,7 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const p = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://wsdevsof_dev:wsdevsof_dev@15.235.54.115/wsdevsof_reciclagem',
+  connectionString: process.env.DATABASE_URL,
   ssl: false
 });
 
@@ -54,5 +55,6 @@ async function run() {
     console.error('MIGRATION_ERROR:', e.message);
   }
   await p.end();
+  process.exit(0);
 }
 run();

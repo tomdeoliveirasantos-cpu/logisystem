@@ -6,9 +6,44 @@ on:
   push:
     branches: [dev]
 
+# Cancela execuções anteriores do mesmo PR/branch quando novo commit chega.
+# Economiza minutos do Actions em push-em-rajada.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ─────────────────────────────────────────────
+  # Detecta quais áreas o PR/push tocou. Os jobs
+  # de lint só rodam se a área correspondente
+  # mudou — economiza minutos em PRs pequenos.
+  # ─────────────────────────────────────────────
+  detect-changes:
+    name: "🔎 Detectar escopo"
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+
+  # ─────────────────────────────────────────────
+  # Backend — ESLint. Só roda se backend/ mudou.
+  # ─────────────────────────────────────────────
   lint-backend:
-    name: "\U0001F3F9 Backend Lint"
+    name: "🏹 Backend Lint"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,8 +61,14 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+  # ─────────────────────────────────────────────
+  # Frontend — ESLint + Build com VITE_API_URL
+  # injetado. Sobe o dist/ como artifact se for PR.
+  # ─────────────────────────────────────────────
   lint-build-frontend:
-    name: "\U0001F3A8 Frontend Lint & Build"
+    name: "🎨 Frontend Lint & Build"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,4 +86,47 @@ jobs:
       - name: Run ESLint
         run: npm run lint
       - name: Build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: npm run build
+      - name: Upload dist (preview do PR)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-pr-${{ github.event.pull_request.number }}
+          path: frontend/dist/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # Gate único para Branch Protection. Mantenha
+  # APENAS este check como required na regra de
+  # proteção do dev / main — assim a Branch
+  # Protection não precisa saber os nomes dos
+  # jobs internos, só pergunta se a CI passou.
+  #
+  # Usa `if: always()` porque queremos que o job
+  # rode mesmo se detect-changes pulou os lints
+  # (ex: PR só de docs). A lógica interna decide
+  # se o resultado é sucesso ou falha.
+  # ─────────────────────────────────────────────
+  ci-success:
+    name: "✅ CI Success"
+    needs: [detect-changes, lint-backend, lint-build-frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar resultado dos jobs
+        run: |
+          BE="${{ needs.lint-backend.result }}"
+          FE="${{ needs.lint-build-frontend.result }}"
+          echo "Backend: $BE  |  Frontend: $FE"
+
+          # Um job 'skipped' é OK (área não mudou).
+          # 'success' é OK. Qualquer outra coisa falha.
+          for R in "$BE" "$FE"; do
+            case "$R" in
+              success|skipped) ;;
+              *) echo "❌ Falha: resultado '$R'"; exit 1 ;;
+            esac
+          done
+          echo "✅ Todos os checks relevantes passaram."

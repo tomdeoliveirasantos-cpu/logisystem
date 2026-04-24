@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
@@ -13,18 +14,8 @@ export default [
         ecmaFeatures: { jsx: true },
       },
       globals: {
-        document: "readonly",
-        window: "readonly",
-        localStorage: "readonly",
-        fetch: "readonly",
-        console: "readonly",
-        setTimeout: "readonly",
-        clearTimeout: "readonly",
-        alert: "readonly",
-        confirm: "readonly",
-        FormData: "readonly",
-        URL: "readonly",
-        navigator: "readonly",
+        ...globals.browser,
+        ...globals.es2024,
       },
     },
     plugins: {
@@ -36,7 +27,9 @@ export default [
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "no-undef": "error",
-      "eqeqeq": ["error", "always"],
+      // "null: ignore" permite `v != null` (idiom para pegar null+undefined juntos).
+      // `===` continua obrigatório em todos os outros casos.
+      "eqeqeq": ["error", "always", { "null": "ignore" }],
       "no-var": "error",
       "prefer-const": "warn",
     },

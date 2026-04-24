@@ -1,4 +1,3 @@
-/* global URLSearchParams */
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';
@@ -349,7 +348,7 @@ export default function Ordens() {
           const regiao = ordSel.find(o => o.regiao)?.regiao || "";
           if (regiao) {
             try {
-              const frData = await api.get(`/financeiro/fretes/buscar?tipo_veiculo=${veic.tipo}\&regiao=${regiao}`);
+              const frData = await api.get(`/financeiro/fretes/buscar?tipo_veiculo=${veic.tipo}&regiao=${regiao}`);
               if (frData?.pagar?.id) body.tabela_frete_id = frData.pagar.id;
             } catch(e) { /* sem frete, segue */ }
           }

@@ -11,23 +11,159 @@ permissions:
   issues: read
 
 jobs:
-  code-review:
-    name: "\U0001F916 Claude Code Review"
+  # ─────────────────────────────────────────────
+  # Detecta quais áreas do repo o PR tocou.
+  # Usado pelos jobs seguintes pra decidir o modo
+  # de revisão (técnica só, ou técnica + visual).
+  # ─────────────────────────────────────────────
+  detect-changes:
+    name: "🔎 Detectar escopo do PR"
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**/*.jsx'
+              - 'frontend/**/*.tsx'
+              - 'frontend/**/*.css'
+              - 'frontend/**/*.scss'
+              - 'frontend/src/**'
+              - 'frontend/public/**'
+              - 'BRAND.md'
+              - 'WEAVY_PROMPTS.md'
+            backend:
+              - 'backend/**'
+
+  # ─────────────────────────────────────────────
+  # Revisão técnica + visual — quando o PR toca
+  # frontend. Prompt instrui o Claude a carregar
+  # BRAND.md do próprio checkout e validar contra
+  # as âncoras negativas.
+  # ─────────────────────────────────────────────
+  code-review-frontend:
+    name: "🎨 Revisão frontend (BRAND.md)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Claude Code Review
+      - name: Claude Code Review — frontend
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: claude-sonnet-4-6
           direct_prompt: |
-            Revise este PR focando em:
-            1. Bugs e erros logicos
-            2. Problemas de seguranca
-            3. Performance
-            4. Boas praticas Node.js/Express e React
-            Seja direto. So comente se encontrar problemas reais.
-            Responda em portugues brasileiro.
+            Você está revisando um PR do LogiSystem que toca arquivos de frontend.
+
+            PASSO 1 — CARREGUE CONTEXTO
+            Leia o arquivo BRAND.md da raiz do repo. Ele é a fonte da verdade
+            sobre UI, paleta, tipografia, componentes e tom de voz. Não revise
+            sem lê-lo.
+
+            PASSO 2 — REVISE SEGUINDO O BRAND.md
+
+            Foco da revisão (ordem de prioridade):
+
+            1. Âncoras negativas do BRAND.md §3 — são 4, qualquer uma violada
+               é problema crítico:
+               - 3.1 Sistema legado dos anos 2000
+               - 3.2 Ferramenta genérica de CRUD
+               - 3.3 App de consumidor final (gradientes coloridos, ilustrações 3D,
+                 emojis decorativos)
+               - 3.4 Planilha Excel turbinada (sem hierarquia tipográfica)
+
+            2. Checklist de merge do BRAND.md §10 — 13 itens binários. Qualquer
+               item violado é pelo menos ⚠️ Importante.
+
+            3. Tokens — toda cor/radius/shadow nova deve estar em
+               frontend/src/index.css no :root como variável. Hex hardcoded em
+               componente é erro.
+
+            4. Componentes — antes de sugerir criar componente novo, verifique
+               se já existe em frontend/src/components/UI.jsx. Status badges
+               devem usar <StatusBadge />, nunca badge inline com cor nova.
+
+            5. Tom de voz — copy em pt-BR, vocabulário do domínio (OT, romaneio,
+               CT-e, MDF-e, coleta, entrega, agregado, despachante). Sem copy
+               genérica ("Ops!", "Ocorreu um erro", "Welcome back").
+
+            6. Revisão técnica padrão — bugs, segurança, performance, boas
+               práticas React/Hooks. Acessibilidade (labels, contraste, keyboard).
+
+            PASSO 3 — FORMATO DE OUTPUT
+
+            Use EXATAMENTE este formato:
+
+            ### 🚨 Crítico
+            Problemas que bloqueiam merge — violações de âncora negativa, bugs,
+            credenciais vazadas, quebra de produção. Se não houver, escreva
+            "Nenhum.".
+
+            ### ⚠️ Importante
+            Violações do checklist de merge, débito técnico relevante, oportunidades
+            de refatoração que afetam consistência. Se não houver, escreva "Nenhum.".
+
+            ### 💡 Sugestão
+            Melhorias opcionais, estilo, alternativas válidas. Se não houver,
+            escreva "Nenhuma.".
+
+            Seja direto. Cite o arquivo e a linha. Se o PR está bom, diga que
+            está bom — não invente problemas. Responda em português brasileiro.
+
+  # ─────────────────────────────────────────────
+  # Revisão técnica só — PR de backend puro,
+  # workflows, docs, devops. Sem contexto de BRAND.
+  # ─────────────────────────────────────────────
+  code-review-backend:
+    name: "🔧 Revisão backend/infra"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true' && needs.detect-changes.outputs.frontend != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Claude Code Review — backend
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          direct_prompt: |
+            Você está revisando um PR do LogiSystem que toca backend/infra
+            (não mexe em frontend).
+
+            Foco da revisão:
+            1. Bugs e erros lógicos
+            2. Segurança — SQL injection, tokens vazados, validação de input,
+               rate limiting, auth em rotas que precisam
+            3. Performance — N+1 queries, loops desnecessários em PG, ausência
+               de índices em coluna de WHERE frequente
+            4. Boas práticas Node.js / Express — async/await corretos, try/catch
+               onde importa, Pool reaproveitado (não recriado por request)
+            5. Separação de rotas públicas vs autenticadas (ver padrão
+               publicRouter/adminRouter em server.js)
+            6. Migrations em script versionado, nunca ALTER TABLE em
+               comando inline
+
+            FORMATO DE OUTPUT:
+
+            ### 🚨 Crítico
+            Bugs, segurança, credenciais. Nenhum → escreva "Nenhum.".
+
+            ### ⚠️ Importante
+            Débito técnico relevante, má prática que vai doer. Nenhum →
+            "Nenhum.".
+
+            ### 💡 Sugestão
+            Opcional. Nenhuma → "Nenhuma.".
+
+            Seja direto. Cite arquivo e linha. Se o PR está bom, diga que
+            está bom. Responda em português brasileiro.

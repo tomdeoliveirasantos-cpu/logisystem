@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: 'C:\\Desenvolvimento\\logisystem\\backend\\.env' });
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
@@ -77,11 +77,8 @@ async function run() {
     const r4 = await client.query('DELETE FROM logi_ordens_transporte');
     append(`  4/10 logi_ordens_transporte: ${r4.rowCount} removidos`);
 
-    // 5. Desvincular motoristas em veículos
-    const r5 = await client.query(
-      'UPDATE logi_veiculos SET motorista_id = NULL WHERE motorista_id IS NOT NULL'
-    );
-    append(`  5/10 logi_veiculos (motorista_id desvinculado): ${r5.rowCount}`);
+    // 5. (Pulado) logi_veiculos.motorista_id não existe nesse schema
+    append(`  5/10 logi_veiculos.motorista_id: SKIP (coluna inexistente)`);
 
     // 6. Desvincular motoristas em multas (preserva multa)
     let r6 = { rowCount: 0 };
@@ -92,14 +89,8 @@ async function run() {
     } catch (e) { append(`     (logi_multas: ${e.message})`); }
     append(`  6/10 logi_multas (motorista_id desvinculado): ${r6.rowCount}`);
 
-    // 7. Desvincular motoristas em manutenções (preserva manutenção)
-    let r7 = { rowCount: 0 };
-    try {
-      r7 = await client.query(
-        'UPDATE logi_manutencoes SET motorista_id = NULL WHERE motorista_id IS NOT NULL'
-      );
-    } catch (e) { append(`     (logi_manutencoes: ${e.message})`); }
-    append(`  7/10 logi_manutencoes (motorista_id desvinculado): ${r7.rowCount}`);
+    // 7. (Pulado) logi_manutencoes.motorista_id não existe nesse schema
+    append(`  7/10 logi_manutencoes.motorista_id: SKIP (coluna inexistente)`);
 
     // 8. Onboarding em andamento
     let r8 = { rowCount: 0 };

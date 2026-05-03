@@ -3,6 +3,7 @@ import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';
 import { api } from '../lib/api';
 import { StatusBadge, Field, Input, Select, useToast, Toast, ExportBtn } from '../components/UI';
+import ImportRoteasy from '../components/ImportRoteasy';
 
 const STATUS_OPTS = [
   {value:'pendente',label:'Pendente'},
@@ -275,6 +276,7 @@ export default function Ordens() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [agrupModal, setAgrupModal] = useState(false);
   const [agrupForm, setAgrupForm] = useState({});
+  const [showImportRoteasy, setShowImportRoteasy] = useState(false);
 
   const openModal = (ordemExistente = null) => {
     if (ordemExistente) {
@@ -412,6 +414,9 @@ export default function Ordens() {
               🔗 Agrupar ({selectedIds.length})
             </button>
           )}
+          <button className="btn btn-ghost" onClick={()=>setShowImportRoteasy(true)} title="Importar planilha do Roteasy">
+            📥 Importar Roteasy
+          </button>
           <button className="btn btn-primary" onClick={()=>openModal()}>+ Nova Ordem</button>
         </div>
       </div>
@@ -792,6 +797,12 @@ export default function Ordens() {
       )}
 
       {toast && <Toast {...toast} />}
+
+      <ImportRoteasy
+        open={showImportRoteasy}
+        onClose={() => setShowImportRoteasy(false)}
+        onSuccess={() => { refetch(); setShowImportRoteasy(false); showToast('✅ Importação concluída com sucesso', 'success'); }}
+      />
     </div>
   );
 }

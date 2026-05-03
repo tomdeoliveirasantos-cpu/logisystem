@@ -306,128 +306,396 @@ router.post('/checar-duplicados', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── Importação em massa (planilha roteirização) ──────────
-router.post('/importar', async (req, res, next) => {
+// ── Helpers para importação ──────────────────────────────
+function normalizar(s) {
+  return String(s || '').trim().toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+async function buscarVeiculoPorPlaca(placa) {
+  if (!placa) return null;
+  const placaNorm = normalizar(placa).replace(/[^A-Z0-9]/g, '');
+  const { rows } = await db.query(
+    `SELECT v.id, v.tipo, v.ag_ft, v.transportadora_id, t.nome AS transportadora_nome
+     FROM logi_veiculos v
+     LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
+     WHERE UPPER(REGEXP_REPLACE(v.placa, '[^A-Za-z0-9]', '', 'g')) = $1
+     LIMIT 1`,
+    [placaNorm]
+  );
+  return rows[0] || null;
+}
+
+async function buscarMotoristaPorNome(nome) {
+  if (!nome) return null;
+  const { rows } = await db.query(
+    `SELECT id, nome FROM logi_motoristas
+     WHERE UPPER(unaccent(nome)) = UPPER(unaccent($1))
+        OR UPPER(unaccent(nome)) ILIKE UPPER(unaccent($2))
+     ORDER BY (UPPER(unaccent(nome)) = UPPER(unaccent($1))) DESC
+     LIMIT 1`,
+    [String(nome).trim(), `%${String(nome).trim()}%`]
+  ).catch(async () => {
+    // Fallback se extension unaccent não existir
+    return await db.query(
+      `SELECT id, nome FROM logi_motoristas
+       WHERE UPPER(nome) = UPPER($1) OR UPPER(nome) ILIKE UPPER($2)
+       ORDER BY (UPPER(nome) = UPPER($1)) DESC
+       LIMIT 1`,
+      [String(nome).trim(), `%${String(nome).trim()}%`]
+    );
+  });
+  return rows[0] || null;
+}
+
+async function buscarOuCriarCliente(client, { codigo, nome, endereco }) {
+  if (!nome) return null;
+  // Documento sintético baseado no código local do Roteasy (idempotente)
+  const documentoSintetico = codigo ? `ROTEASY-${codigo}` : null;
+
+  if (documentoSintetico) {
+    const ex = await client.query(
+      'SELECT id FROM logi_clientes WHERE documento = $1 LIMIT 1',
+      [documentoSintetico]
+    );
+    if (ex.rows.length) return ex.rows[0].id;
+  }
+
+  // Tentar match por nome exato (caso já exista cliente cadastrado manualmente)
+  const exNome = await client.query(
+    `SELECT id FROM logi_clientes WHERE UPPER(TRIM(nome)) = UPPER(TRIM($1)) LIMIT 1`,
+    [nome]
+  );
+  if (exNome.rows.length) return exNome.rows[0].id;
+
+  // Criar novo
+  const ins = await client.query(
+    `INSERT INTO logi_clientes (nome, tipo_doc, documento, logradouro, ativo)
+     VALUES ($1, 'CNPJ', $2, $3, true)
+     ON CONFLICT (documento) DO UPDATE SET nome = EXCLUDED.nome
+     RETURNING id`,
+    [String(nome).trim().substring(0, 200), documentoSintetico, endereco || null]
+  );
+  return ins.rows[0].id;
+}
+
+// ── Preview de importação ────────────────────────────────
+// Recebe rotas + paradas já parseadas no frontend, faz lookups e devolve
+// um relatório com alertas. NÃO persiste nada.
+router.post('/importar/preview', async (req, res, next) => {
   try {
     const { data, rotas } = req.body;
-
     if (!data || !rotas?.length) return res.status(400).json({ error: 'Data e rotas são obrigatórios' });
 
-    // Coletar todos os pedidos para checar duplicidade de uma vez
-    const todosPedidos = [];
+    const resultado = [];
+    const alertas = [];
+    let totalParadas = 0;
+
     for (const rota of rotas) {
-      for (const parada of (rota.paradas || [])) {
-        if (parada.pedido) todosPedidos.push(String(parada.pedido));
+      const veiculo = rota.placa ? await buscarVeiculoPorPlaca(rota.placa) : null;
+      const motorista = rota.operador ? await buscarMotoristaPorNome(rota.operador) : null;
+
+      if (rota.placa && !veiculo) {
+        alertas.push({ tipo: 'veiculo_nao_encontrado', valor: rota.placa, rota: rota.numero_rota });
       }
-    }
+      if (rota.operador && !motorista) {
+        alertas.push({ tipo: 'motorista_nao_encontrado', valor: rota.operador, rota: rota.numero_rota });
+      }
 
-    // Buscar quais já existem no banco
-    let pedidosDuplicados = [];
-    if (todosPedidos.length) {
-      const placeholders = todosPedidos.map((_, i) => `$${i + 1}`).join(',');
-      const { rows: existentes } = await db.query(
-        `SELECT DISTINCT pedido FROM logi_ordens_transporte WHERE pedido IN (${placeholders})`,
-        todosPedidos
-      );
-      pedidosDuplicados = existentes.map(r => r.pedido);
-    }
+      const paradas = rota.paradas || [];
+      totalParadas += paradas.length;
 
-    const criadas = [];
-    const ignoradas = [];
-
-    for (const rota of rotas) {
-      const { numero_rota, motorista_id, veiculo_id, ajudante_nome, tabela_frete_id } = rota;
-
-      for (const parada of (rota.paradas || [])) {
-        // Pular se pedido já existe
-        if (parada.pedido && pedidosDuplicados.includes(String(parada.pedido))) {
-          ignoradas.push({ pedido: parada.pedido, cliente: parada.cliente_nome, rota: numero_rota });
-          continue;
-        }
-
+      // Verificar remessas já importadas
+      const remessas = paradas.map(p => p.remessa).filter(Boolean).map(String);
+      let remessasExistentes = [];
+      if (remessas.length) {
+        const ph = remessas.map((_, i) => `$${i + 1}`).join(',');
         const { rows } = await db.query(
-          `INSERT INTO logi_ordens_transporte
-            (data, numero_rota, seq, pedido, cliente_nome, regiao, peso, nf, remessa, obs,
-             motorista_id, veiculo_id, ajudante_nome, status, tipo)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pendente',$14)
-           RETURNING *`,
-          [data, numero_rota, parada.seq || 1, parada.pedido || null,
-           parada.cliente_nome || null, parada.regiao || rota.regiao || null,
-           parada.peso || null, parada.nf || null, parada.remessa || null, parada.obs || null,
-           motorista_id || null, veiculo_id || null, ajudante_nome || null,
-           rota.tipo || 'INTEIRO']
+          `SELECT remessa FROM logi_ordens_transporte WHERE remessa IN (${ph})`,
+          remessas
         );
+        remessasExistentes = rows.map(r => String(r.remessa));
+      }
 
-        const ordem = rows[0];
-        criadas.push(ordem);
+      resultado.push({
+        numero_rota: rota.numero_rota,
+        placa: rota.placa,
+        veiculo_id: veiculo?.id || null,
+        veiculo_tipo: veiculo?.tipo || null,
+        veiculo_ag_ft: veiculo?.ag_ft || null,
+        operador: rota.operador,
+        motorista_id: motorista?.id || null,
+        motorista_nome: motorista?.nome || null,
+        transportadora_nome: rota.transportadora || veiculo?.transportadora_nome || null,
+        total_paradas: paradas.length,
+        peso_total: paradas.reduce((s, p) => s + (Number(p.peso) || 0), 0),
+        remessas_para_atualizar: remessas.filter(r => remessasExistentes.includes(r)).length,
+        remessas_para_criar: remessas.filter(r => !remessasExistentes.includes(r)).length,
+      });
+    }
 
-        // Geração automática financeiro (mesma lógica do POST normal)
-        if (veiculo_id) {
-          // Contas a Receber (frete fixo por veículo)
-          try {
-            const { rows: vr } = await db.query('SELECT tipo FROM logi_veiculos WHERE id = $1', [veiculo_id]);
-            if (vr.length) {
-              const tipoVeiculo = vr[0].tipo;
-              const { rows: fr } = await db.query(
-                'SELECT valor FROM logi_tabela_frete_recebido WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))',
-                [tipoVeiculo]
-              );
-              if (fr.length && fr[0].valor) {
-                await db.query(
-                  `INSERT INTO logi_contas_receber (ordem_id, cliente, valor, vencimento, obs)
-                   VALUES ($1, $2, $3, $4, $5)`,
-                  [ordem.id, 'Léo Madeiras', fr[0].valor, data,
-                   `Frete recebido - ${tipoVeiculo} - Rota ${numero_rota} - ${parada.regiao || ''}`]
-                );
-              }
-            }
-          } catch(e) { console.error('Erro receber importação:', e.message); }
+    res.json({
+      data,
+      total_rotas: rotas.length,
+      total_paradas: totalParadas,
+      rotas: resultado,
+      alertas,
+    });
+  } catch (err) { next(err); }
+});
 
-          // Contas a Pagar (frete agregado)
-          if (tabela_frete_id) {
-            try {
-              const { rows: vrows } = await db.query(
-                `SELECT v.ag_ft, t.id AS transportadora_id, t.nome AS transportadora_nome
-                 FROM logi_veiculos v LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
-                 WHERE v.id = $1`, [veiculo_id]
-              );
-              if (vrows.length && vrows[0].ag_ft === 'agregado') {
-                const { rows: fr } = await db.query('SELECT valor_base FROM logi_tabela_fretes WHERE id = $1', [tabela_frete_id]);
-                if (fr.length) {
-                  await db.query(
-                    `INSERT INTO logi_contas_pagar (ordem_id, tabela_frete_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-                    [ordem.id, tabela_frete_id, vrows[0].transportadora_id, motorista_id,
-                     fr[0].valor_base, data, `Frete agregado - Rota ${numero_rota}`, 'frete_agregado']
-                  );
-                }
-              }
-            } catch(e) { console.error('Erro pagar importação:', e.message); }
-          }
+// ── Importação em massa (planilha roteirização Roteasy / genérica) ──────
+// Comportamento:
+//   - UPSERT por remessa (atualiza se já existe, cria se não)
+//   - Auto-criação de cliente em logi_clientes
+//   - 1 CAP consolidado por rota (modo padrão; respeita parâmetro cap_modo_importacao)
+//   - 1 CAR consolidado por rota baseado no tipo do veículo
+router.post('/importar', async (req, res, next) => {
+  const client = await db.pool.connect().catch(() => null);
+  // Fallback se db não expõe pool — usar db.query direto (sem transação)
+  const useTx = !!client;
+  if (useTx) await client.query('BEGIN');
 
-          // Ajudante
-          if (ajudante_nome) {
-            try {
-              const { rows: paramRows } = await db.query("SELECT valor FROM logi_parametros WHERE chave = 'valor_ajudante'");
-              if (paramRows.length) {
-                const valorAjudante = parseFloat(paramRows[0].valor) || 0;
-                if (valorAjudante > 0) {
-                  await db.query(
-                    `INSERT INTO logi_contas_pagar (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
-                     VALUES ($1,$2,$3,$4,$5,$6)`,
-                    [ordem.id, motorista_id, valorAjudante, data,
-                     `Ajudante - ${ajudante_nome} - Rota ${numero_rota}`, 'diaria_ajudante']
-                  );
-                }
-              }
-            } catch(e) { console.error('Erro ajudante importação:', e.message); }
-          }
+  const q = (sql, params) => useTx ? client.query(sql, params) : db.query(sql, params);
+
+  try {
+    const { data, rotas, origem = 'roteasy' } = req.body;
+    if (!data || !rotas?.length) return res.status(400).json({ error: 'Data e rotas são obrigatórios' });
+
+    // Lê modo de geração de CAP
+    const { rows: modoRows } = await q(
+      "SELECT valor FROM logi_parametros WHERE chave = 'cap_modo_importacao'"
+    );
+    const capModo = modoRows[0]?.valor || 'consolidado';
+
+    // Valor do ajudante (parametrizado)
+    let valorAjudante = 0;
+    const { rows: ajRows } = await q(
+      "SELECT valor FROM logi_parametros WHERE chave = 'valor_ajudante'"
+    );
+    if (ajRows.length) valorAjudante = parseFloat(ajRows[0].valor) || 0;
+
+    const resumo = {
+      criadas: 0,
+      atualizadas: 0,
+      ignoradas: 0,
+      cap_gerados: 0,
+      car_gerados: 0,
+      rotas_processadas: 0,
+    };
+
+    for (const rota of rotas) {
+      const { numero_rota, placa, operador, ajudante_nome, transportadora_nome } = rota;
+
+      // Resolver veículo e motorista (alerta no preview já passou; aqui apenas tenta)
+      const veiculo = placa ? await buscarVeiculoPorPlaca(placa) : null;
+      const motorista = operador ? await buscarMotoristaPorNome(operador) : null;
+      const veiculo_id = veiculo?.id || null;
+      const motorista_id = motorista?.id || null;
+
+      // Determinar grupo_viagem: reaproveitar se já existir alguma OT com as remessas
+      // dessa rota (caso de reimportação), senão gerar um novo
+      let grupoViagem = null;
+      const remessasRota = (rota.paradas || []).map(p => p.remessa).filter(Boolean).map(String);
+      if (remessasRota.length) {
+        const ph = remessasRota.map((_, i) => `$${i + 1}`).join(',');
+        const { rows: existentes } = await q(
+          `SELECT DISTINCT grupo_viagem FROM logi_ordens_transporte
+           WHERE remessa IN (${ph}) AND grupo_viagem IS NOT NULL LIMIT 1`,
+          remessasRota
+        );
+        if (existentes.length) grupoViagem = existentes[0].grupo_viagem;
+      }
+      if (!grupoViagem) {
+        grupoViagem = 'GV' + Date.now().toString(36).toUpperCase() + numero_rota;
+      }
+
+      const ordensDaRota = [];
+
+      for (const parada of (rota.paradas || [])) {
+        // Resolver/criar cliente
+        let cliente_id = null;
+        try {
+          cliente_id = await buscarOuCriarCliente(useTx ? client : { query: db.query.bind(db) }, {
+            codigo: parada.codigo_local,
+            nome: parada.cliente_nome,
+            endereco: parada.endereco,
+          });
+        } catch (e) {
+          console.error('Erro auto-criar cliente:', e.message);
         }
+
+        // UPSERT por remessa (se houver). Sem remessa → INSERT direto.
+        let ordem;
+        if (parada.remessa) {
+          const { rows } = await q(
+            `INSERT INTO logi_ordens_transporte
+              (data, numero_rota, seq, pedido, cliente_id, cliente_nome, regiao, peso, nf, remessa, obs,
+               motorista_id, veiculo_id, ajudante_nome, status, tipo, origem_importacao, grupo_viagem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pendente',$15,$16,$17)
+             ON CONFLICT (remessa) WHERE remessa IS NOT NULL AND remessa <> ''
+             DO UPDATE SET
+               data = EXCLUDED.data,
+               numero_rota = EXCLUDED.numero_rota,
+               seq = EXCLUDED.seq,
+               pedido = EXCLUDED.pedido,
+               cliente_id = COALESCE(EXCLUDED.cliente_id, logi_ordens_transporte.cliente_id),
+               cliente_nome = EXCLUDED.cliente_nome,
+               regiao = EXCLUDED.regiao,
+               peso = EXCLUDED.peso,
+               obs = EXCLUDED.obs,
+               motorista_id = COALESCE(EXCLUDED.motorista_id, logi_ordens_transporte.motorista_id),
+               veiculo_id = COALESCE(EXCLUDED.veiculo_id, logi_ordens_transporte.veiculo_id),
+               ajudante_nome = EXCLUDED.ajudante_nome,
+               tipo = EXCLUDED.tipo,
+               origem_importacao = EXCLUDED.origem_importacao,
+               grupo_viagem = EXCLUDED.grupo_viagem,
+               updated_at = NOW()
+             RETURNING *, (xmax = 0) AS inserido`,
+            [data, numero_rota, parada.seq || 1, parada.pedido || null,
+             cliente_id, parada.cliente_nome || null, parada.regiao || rota.regiao || null,
+             parada.peso || null, parada.nf || null, String(parada.remessa), parada.obs || null,
+             motorista_id, veiculo_id, ajudante_nome || null,
+             rota.tipo || 'INTEIRO', origem, grupoViagem]
+          );
+          ordem = rows[0];
+          if (ordem.inserido) resumo.criadas++; else resumo.atualizadas++;
+        } else {
+          const { rows } = await q(
+            `INSERT INTO logi_ordens_transporte
+              (data, numero_rota, seq, pedido, cliente_id, cliente_nome, regiao, peso, nf, remessa, obs,
+               motorista_id, veiculo_id, ajudante_nome, status, tipo, origem_importacao, grupo_viagem)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pendente',$15,$16,$17)
+             RETURNING *`,
+            [data, numero_rota, parada.seq || 1, parada.pedido || null,
+             cliente_id, parada.cliente_nome || null, parada.regiao || rota.regiao || null,
+             parada.peso || null, parada.nf || null, null, parada.obs || null,
+             motorista_id, veiculo_id, ajudante_nome || null,
+             rota.tipo || 'INTEIRO', origem, grupoViagem]
+          );
+          ordem = rows[0];
+          resumo.criadas++;
+        }
+        ordensDaRota.push(ordem);
+      }
+
+      resumo.rotas_processadas++;
+
+      // ── Geração financeira (consolidada por rota) ─────────────────
+      // Apenas se houver veículo identificado e ordens criadas
+      if (!veiculo_id || !ordensDaRota.length) continue;
+
+      // Limpar CAP/CAR pendentes anteriores desta rota (caso seja reimport)
+      const ordemIds = ordensDaRota.map(o => o.id);
+      await q(
+        `UPDATE logi_contas_pagar SET status='cancelado'
+         WHERE ordem_id = ANY($1::int[])
+           AND status = 'pendente'
+           AND descricao LIKE '%[ROTA_IMPORT]%'`,
+        [ordemIds]
+      );
+      await q(
+        `UPDATE logi_contas_receber SET status='cancelado'
+         WHERE ordem_id = ANY($1::int[])
+           AND status = 'pendente'
+           AND obs LIKE '%[ROTA_IMPORT]%'`,
+        [ordemIds]
+      );
+
+      // CAR: 1 título consolidado por rota (frete recebido)
+      try {
+        const { rows: fr } = await q(
+          `SELECT valor FROM logi_tabela_frete_recebido
+           WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))`,
+          [veiculo.tipo || '']
+        );
+        if (fr.length && fr[0].valor) {
+          // Ordem âncora = primeira da rota
+          const ordemAncora = ordensDaRota[0];
+          await q(
+            `INSERT INTO logi_contas_receber (ordem_id, cliente, valor, vencimento, obs)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [ordemAncora.id, 'Léo Madeiras', fr[0].valor, data,
+             `[ROTA_IMPORT] Frete recebido - ${veiculo.tipo} - Rota ${numero_rota} (${ordensDaRota.length} entregas)`]
+          );
+          resumo.car_gerados++;
+        }
+      } catch (e) { console.error('Erro CAR consolidado:', e.message); }
+
+      // CAP: 1 título consolidado por rota (frete pago / diária)
+      if (capModo === 'consolidado') {
+        try {
+          // Buscar tabela de frete agregado pelo tipo de veículo (heurística)
+          let valorFrete = null;
+          if (veiculo.ag_ft === 'agregado') {
+            const { rows: tf } = await q(
+              `SELECT valor_base FROM logi_tabela_fretes
+               WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))
+               ORDER BY id DESC LIMIT 1`,
+              [veiculo.tipo || '']
+            ).catch(() => ({ rows: [] }));
+            if (tf.length) valorFrete = parseFloat(tf[0].valor_base) || null;
+          }
+
+          const ordemAncora = ordensDaRota[0];
+
+          if (veiculo.ag_ft === 'agregado' && valorFrete) {
+            await q(
+              `INSERT INTO logi_contas_pagar
+                (ordem_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [ordemAncora.id, veiculo.transportadora_id || null, motorista_id,
+               valorFrete, data,
+               `[ROTA_IMPORT] Frete agregado - ${transportadora_nome || veiculo.transportadora_nome || ''} - Rota ${numero_rota} (${ordensDaRota.length} entregas)`,
+               'frete_agregado']
+            );
+            resumo.cap_gerados++;
+          } else if (veiculo.ag_ft === 'frota' && motorista_id) {
+            // Diária do motorista — também busca por tipo de veículo
+            const { rows: tf } = await q(
+              `SELECT valor_base FROM logi_tabela_fretes
+               WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))
+               ORDER BY id DESC LIMIT 1`,
+              [veiculo.tipo || '']
+            ).catch(() => ({ rows: [] }));
+            const vd = tf[0]?.valor_base ? parseFloat(tf[0].valor_base) : null;
+            if (vd) {
+              await q(
+                `INSERT INTO logi_contas_pagar
+                  (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+                 VALUES ($1,$2,$3,$4,$5,$6)`,
+                [ordemAncora.id, motorista_id, vd, data,
+                 `[ROTA_IMPORT] Diária motorista - Rota ${numero_rota} (${ordensDaRota.length} entregas)`,
+                 'diaria_motorista']
+              );
+              resumo.cap_gerados++;
+            }
+          }
+
+          // Ajudante (1 lançamento por rota)
+          if (valorAjudante > 0 && ajudante_nome) {
+            await q(
+              `INSERT INTO logi_contas_pagar
+                (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+               VALUES ($1,$2,$3,$4,$5,$6)`,
+              [ordemAncora.id, motorista_id, valorAjudante, data,
+               `[ROTA_IMPORT] Ajudante - ${ajudante_nome} - Rota ${numero_rota}`,
+               'diaria_ajudante']
+            );
+            resumo.cap_gerados++;
+          }
+        } catch (e) { console.error('Erro CAP consolidado:', e.message); }
       }
     }
 
-    res.status(201).json({ success: true, total: criadas.length, ignoradas: ignoradas.length, duplicados: ignoradas, ordens: criadas });
-  } catch (err) { next(err); }
+    if (useTx) await client.query('COMMIT');
+    res.status(201).json({ success: true, ...resumo });
+  } catch (err) {
+    if (useTx) await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    if (useTx) client.release();
+  }
 });
 
 // ── Editar ordem ─────────────────────────────────────────

@@ -21,7 +21,7 @@ async function run() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS logi_ordem_paradas (
         id SERIAL PRIMARY KEY,
-        ordem_id INTEGER NOT NULL REFERENCES logi_ordens_transporte(id) ON DELETE CASCADE,
+        ordem_id TEXT NOT NULL REFERENCES logi_ordens_transporte(id) ON DELETE CASCADE,
         seq INTEGER NOT NULL DEFAULT 1,
         codigo_local VARCHAR(50),
         cliente_nome VARCHAR(255),

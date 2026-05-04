@@ -45,7 +45,17 @@ function exportXLS(rows) {
 }
 
 function AnexoCell({ ordem }) {
-  if (ordem.anexo_path) {
+  // Tem anexos múltiplos (campo agregado vindo do backend) OU anexo legado
+  const count = ordem.anexos_count || 0;
+  const legado = ordem.anexo_path && !count;
+  if (count > 0) {
+    return (
+      <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,color:'var(--accent)'}}>
+        📎 {count} {count === 1 ? 'anexo' : 'anexos'}
+      </span>
+    );
+  }
+  if (legado) {
     const url = `https://api.wsdevsoft.com/uploads/${ordem.anexo_path}`;
     return (
       <a href={url} target="_blank" rel="noreferrer"
@@ -57,19 +67,84 @@ function AnexoCell({ ordem }) {
   return <span style={{fontSize:11,color:'var(--text3)'}}>—</span>;
 }
 
-function UploadZone({ file, onFile }) {
+function UploadZone({ files, onFiles }) {
   const ref = useRef();
+  const arr = Array.isArray(files) ? files : [];
+  const onSelect = (fileList) => {
+    if (!fileList || !fileList.length) return;
+    onFiles([...arr, ...Array.from(fileList)]);
+  };
+  const remove = (idx) => onFiles(arr.filter((_, i) => i !== idx));
   return (
-    <div className={`upload-zone ${file?'has-file':''}`} onClick={()=>ref.current.click()}
-      onDrop={e=>{e.preventDefault();onFile(e.dataTransfer.files[0]);}} onDragOver={e=>e.preventDefault()}>
-      <input ref={ref} type="file" style={{display:'none'}} accept=".pdf,.jpg,.jpeg,.png,.xml" onChange={e=>onFile(e.target.files[0])} />
-      <div className="upload-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-        </svg>
+    <div>
+      <div className={`upload-zone ${arr.length?'has-file':''}`} onClick={()=>ref.current.click()}
+        onDrop={e=>{e.preventDefault();onSelect(e.dataTransfer.files);}} onDragOver={e=>e.preventDefault()}>
+        <input ref={ref} type="file" multiple style={{display:'none'}} accept=".pdf,.jpg,.jpeg,.png,.xml" onChange={e=>onSelect(e.target.files)} />
+        <div className="upload-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+        </div>
+        <div className="upload-text">Clique ou arraste os arquivos aqui</div>
+        <div className="upload-hint">PDF, imagem ou XML — múltiplos arquivos, máx. 10 MB cada</div>
       </div>
-      {file ? <div className="upload-text" style={{color:'var(--green)',fontWeight:500}}>{file.name}</div>
-             : <><div className="upload-text">Clique ou arraste o arquivo aqui</div><div className="upload-hint">PDF, imagem ou XML — máx. 10 MB</div></>}
+      {arr.length > 0 && (
+        <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:4}}>
+          {arr.map((f, idx) => (
+            <div key={idx} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',background:'var(--bg2)',borderRadius:'var(--radius)',fontSize:12}}>
+              <span style={{color:'var(--green)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📎 {f.name}</span>
+              <button type="button" onClick={(e)=>{e.stopPropagation();remove(idx);}}
+                style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626',padding:'2px 6px',fontSize:14}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Lista de anexos JÁ salvos (em modo edição) — com botão de download e excluir
+function AnexosExistentes({ ordemId, refreshKey, onChange, showToast }) {
+  const [anexos, setAnexos] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ordemId) { setAnexos([]); return; }
+    setLoading(true);
+    api.get(`/ordens/${ordemId}/anexos`)
+      .then(r => setAnexos(r || []))
+      .catch(() => setAnexos([]))
+      .finally(() => setLoading(false));
+  }, [ordemId, refreshKey]);
+
+  const remover = async (anexoId) => {
+    if (!confirm('Remover este anexo?')) return;
+    try {
+      await api.delete(`/ordens/anexos/${anexoId}`);
+      setAnexos(prev => prev.filter(a => a.id !== anexoId));
+      onChange?.();
+      showToast?.('Anexo removido', 'success');
+    } catch (e) { showToast?.(e.message, 'error'); }
+  };
+
+  if (!ordemId) return null;
+  if (loading) return <div style={{fontSize:11,color:'var(--text3)'}}>Carregando anexos…</div>;
+  if (!anexos.length) return null;
+
+  return (
+    <div style={{marginBottom:8,display:'flex',flexDirection:'column',gap:4}}>
+      <div style={{fontSize:11,color:'var(--text3)',marginBottom:2}}>Anexos já salvos:</div>
+      {anexos.map(a => (
+        <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',background:'var(--accent-lt)',borderRadius:'var(--radius)',fontSize:12}}>
+          <a href={`https://api.wsdevsoft.com/api/ordens/anexos/${a.id}/download?token=${encodeURIComponent(localStorage.getItem('logi_token')||'')}`}
+            target="_blank" rel="noreferrer"
+            style={{color:'var(--accent)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textDecoration:'none'}}>
+            📎 {a.nome}
+          </a>
+          <button type="button" onClick={()=>remover(a.id)}
+            style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626',padding:'2px 6px',fontSize:14}}>×</button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -91,7 +166,8 @@ export default function Ordens() {
   const [filtBusca, setFiltBusca]   = useState('');
   const [modal, setModal] = useState(false);
   const [form, setForm]   = useState({ data: today });
-  const [anexo, setAnexo] = useState(null);
+  const [anexos, setAnexos] = useState([]);                  // arquivos novos a enviar
+  const [anexosRefreshKey, setAnexosRefreshKey] = useState(0); // pra refrescar lista de existentes
   const [formError, setFormError] = useState('');
   const [freteData, setFreteData] = useState(null);
   const [freteLoading, setFreteLoading] = useState(false);
@@ -170,7 +246,7 @@ export default function Ordens() {
     if (form.tipo_frota === 'terceiro' && visivel('ajuda_diesel') && obrigatorio('ajuda_diesel') && !form.ajuda_diesel) erros.push('Ajuda Diesel');
     if (form.tipo_frota === 'terceiro' && visivel('taxa_descarga') && obrigatorio('taxa_descarga') && !form.taxa_descarga) erros.push('Taxa Descarga');
     if (visivel('obs') && obrigatorio('obs') && !form.obs) erros.push('Observações');
-    if (visivel('anexo') && obrigatorio('anexo') && !anexo) erros.push('Anexo');
+    if (visivel('anexo') && obrigatorio('anexo') && !anexos.length && !editingId) erros.push('Anexo');
     return erros;
   };
 
@@ -207,7 +283,7 @@ export default function Ordens() {
         if (form.km_chegada) fd.append('km_chegada', form.km_chegada);
       }
       fd.append('status', form.status||'pendente');
-      if(visivel('anexo') && anexo) fd.append('anexo', anexo);
+      // Não enviar anexo legado — anexos vão pelo endpoint dedicado abaixo
 
       // Paradas inline (sempre que houver)
       if (paradas.length) fd.append('paradas', JSON.stringify(paradas));
@@ -223,6 +299,26 @@ export default function Ordens() {
 
       const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
       if(!res.ok) throw new Error('Erro ao salvar');
+      const ordemSalva = await res.json().catch(() => null);
+      const ordemId = editingId || ordemSalva?.id;
+
+      // Upload de anexos novos (se houver)
+      if (ordemId && anexos.length) {
+        const fdAnex = new FormData();
+        anexos.forEach(f => fdAnex.append('anexos', f));
+        try {
+          const r2 = await fetch(`https://api.wsdevsoft.com/api/ordens/${ordemId}/anexos`, {
+            method: 'POST', body: fdAnex, headers: { Authorization: `Bearer ${token}` }
+          });
+          if (!r2.ok) {
+            const err = await r2.json().catch(() => ({}));
+            showToast(`OT salva, mas anexos falharam: ${err.error || r2.status}`, 'error');
+          }
+        } catch (e) {
+          showToast(`OT salva, mas anexos falharam: ${e.message}`, 'error');
+        }
+      }
+
       showToast(editingId ? 'Ordem atualizada!' : 'Ordem criada!');
       refetch(); closeModal();
     } catch(e) { showToast(e.message,'error'); }
@@ -302,7 +398,7 @@ export default function Ordens() {
       setParadas([]);
       setAjudantesIds([]);
     }
-    setAnexo(null);
+    setAnexos([]);
     setFormError('');
     setFreteData(null);
     setModal(true);
@@ -312,7 +408,7 @@ export default function Ordens() {
     setModal(false);
     setEditingId(null);
     setForm({ data: today });
-    setAnexo(null);
+    setAnexos([]);
     setFreteData(null);
     setParadas([]);
   };
@@ -804,14 +900,22 @@ export default function Ordens() {
                 </div>
               )}
 
-              {/* Anexo */}
+              {/* Anexos (múltiplos) */}
               {visivel('anexo') && (
                 <div>
                   <div style={{fontSize:12,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:6}}>
-                    Anexo {obrigatorio('anexo') && <span style={{color:'var(--red)'}}>*</span>}
+                    Anexos {obrigatorio('anexo') && <span style={{color:'var(--red)'}}>*</span>}
                     <span style={{fontWeight:400,textTransform:'none',marginLeft:6}}>(NF, romaneio, comprovante...)</span>
                   </div>
-                  <UploadZone file={anexo} onFile={setAnexo} />
+                  {editingId && (
+                    <AnexosExistentes
+                      ordemId={editingId}
+                      refreshKey={anexosRefreshKey}
+                      onChange={() => setAnexosRefreshKey(k => k + 1)}
+                      showToast={showToast}
+                    />
+                  )}
+                  <UploadZone files={anexos} onFiles={setAnexos} />
                 </div>
               )}
             </div>

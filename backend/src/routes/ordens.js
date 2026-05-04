@@ -112,14 +112,12 @@ async function regenerarFinanceiroOT(client, ordemId) {
   if (!ots.length) return;
   const ot = ots[0];
 
-  // Cancelar lançamentos pendentes anteriores da OT
+  // Apagar lançamentos pendentes anteriores da OT (regeneração limpa)
   await client.query(
-    `UPDATE logi_contas_pagar SET status='cancelado'
-     WHERE ordem_id=$1 AND status='pendente'`, [ordemId]
+    `DELETE FROM logi_contas_pagar WHERE ordem_id=$1 AND status='pendente'`, [ordemId]
   );
   await client.query(
-    `UPDATE logi_contas_receber SET status='cancelado'
-     WHERE ordem_id=$1 AND status='pendente'`, [ordemId]
+    `DELETE FROM logi_contas_receber WHERE ordem_id=$1 AND status='pendente'`, [ordemId]
   );
 
   // Tipo efetivo do frete: campo OT.tipo_frete tem precedência sobre veiculo.tipo
@@ -309,7 +307,8 @@ router.get('/', async (req, res, next) => {
               m.nome  AS motorista_nome,
               v.placa, v.tipo AS veiculo_tipo, v.ag_ft,
               c.nome  AS cliente_cadastrado,
-              (SELECT COUNT(*)::int FROM logi_ordem_paradas p WHERE p.ordem_id = o.id) AS qt_paradas_real
+              (SELECT COUNT(*)::int FROM logi_ordem_paradas p WHERE p.ordem_id = o.id) AS qt_paradas_real,
+              (SELECT COUNT(*)::int FROM logi_ordem_anexos a WHERE a.ordem_id = o.id) AS anexos_count
        FROM   logi_ordens_transporte o
        LEFT JOIN logi_motoristas m ON m.id = o.motorista_id
        LEFT JOIN logi_veiculos   v ON v.id = o.veiculo_id
@@ -375,6 +374,75 @@ router.get('/:id/anexo', async (req, res, next) => {
     const filePath = path.join(UPLOADS_DIR, rows[0].anexo_path);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado no servidor' });
     res.download(filePath, rows[0].anexo_nome);
+  } catch (err) { next(err); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// ANEXOS MÚLTIPLOS — logi_ordem_anexos
+// ═══════════════════════════════════════════════════════════
+
+// GET /api/ordens/:id/anexos — lista todos os anexos da OT
+router.get('/:id/anexos', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, ordem_id, nome, path, tamanho, content_type, created_at
+       FROM logi_ordem_anexos
+       WHERE ordem_id=$1
+       ORDER BY created_at DESC, id DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /api/ordens/:id/anexos — adicionar 1+ arquivos
+router.post('/:id/anexos', upload.array('anexos', 10), async (req, res, next) => {
+  try {
+    const ordemId = req.params.id;
+    const { rows: ots } = await db.query(`SELECT id FROM logi_ordens_transporte WHERE id=$1`, [ordemId]);
+    if (!ots.length) return res.status(404).json({ error: 'Ordem não encontrada' });
+
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+
+    const inseridos = [];
+    for (const f of files) {
+      const { rows } = await db.query(
+        `INSERT INTO logi_ordem_anexos (ordem_id, nome, path, tamanho, content_type)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, ordem_id, nome, path, tamanho, content_type, created_at`,
+        [ordemId, f.originalname, f.filename, f.size, f.mimetype]
+      );
+      inseridos.push(rows[0]);
+    }
+    res.json({ success: true, anexos: inseridos });
+  } catch (err) { next(err); }
+});
+
+// GET /api/ordens/anexos/:anexoId/download — baixar anexo específico
+router.get('/anexos/:anexoId/download', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT path, nome FROM logi_ordem_anexos WHERE id=$1`, [req.params.anexoId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Anexo não encontrado' });
+    const filePath = path.join(UPLOADS_DIR, rows[0].path);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado no servidor' });
+    res.download(filePath, rows[0].nome);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/ordens/anexos/:anexoId — apagar anexo (registro + arquivo físico)
+router.delete('/anexos/:anexoId', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT path FROM logi_ordem_anexos WHERE id=$1`, [req.params.anexoId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Anexo não encontrado' });
+    const filePath = path.join(UPLOADS_DIR, rows[0].path);
+    await db.query(`DELETE FROM logi_ordem_anexos WHERE id=$1`, [req.params.anexoId]);
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { /* ignore disk errors */ }
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
@@ -1037,6 +1105,47 @@ router.post('/desagrupar', async (req, res, next) => {
 
     res.json({ success: true });
   } catch (err) { next(err); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// DELETE OT — apaga OT e tudo atrelado (CAR, CAP, paradas, ajudantes)
+// ═══════════════════════════════════════════════════════════
+router.delete('/:id', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ordemId = req.params.id;
+
+    // Verificar se existe
+    const { rows } = await client.query(
+      `SELECT id, anexo_path, status FROM logi_ordens_transporte WHERE id=$1`, [ordemId]
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Ordem não encontrada' });
+    }
+
+    // Apagar dependências em ordem (FKs cascateiam mas garantimos limpeza explícita)
+    await client.query(`DELETE FROM logi_contas_pagar WHERE ordem_id=$1`, [ordemId]);
+    await client.query(`DELETE FROM logi_contas_receber WHERE ordem_id=$1`, [ordemId]);
+    await client.query(`DELETE FROM logi_ordem_ajudantes WHERE ordem_id=$1`, [ordemId]);
+    await client.query(`DELETE FROM logi_ordem_paradas WHERE ordem_id=$1`, [ordemId]);
+    // Tabela de anexos múltiplos (se existir)
+    try {
+      await client.query(`DELETE FROM logi_ordem_anexos WHERE ordem_id=$1`, [ordemId]);
+    } catch (e) { /* tabela pode não existir ainda */ }
+
+    // Apagar OT
+    await client.query(`DELETE FROM logi_ordens_transporte WHERE id=$1`, [ordemId]);
+
+    await client.query('COMMIT');
+    res.json({ success: true, deleted: ordemId });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 module.exports = router;

@@ -24,10 +24,15 @@ function xlsBtn(label, rows, cols) {
 export function ContasReceber() {
   const { data, loading, refetch } = useFetch('/financeiro/receber');
   const { toast, showToast } = useToast();
-  const rows = data||[];
+  const rows = (data||[]).filter(r => r.status !== 'cancelado');
   const marcarRecebido = async (id) => { try { await api.patch(`/financeiro/receber/${id}/receber`,{}); showToast('Marcado como recebido!'); refetch(); } catch(e) { showToast(e.message,'error'); } };
+  const excluir = async (id) => {
+    if (!confirm('Excluir este lançamento permanentemente?')) return;
+    try { await api.delete(`/financeiro/receber/${id}`); showToast('Lançamento excluído!'); refetch(); }
+    catch(e) { showToast(e.message,'error'); }
+  };
   const total=rows.reduce((s,r)=>s+ +r.valor,0), emAberto=rows.filter(r=>r.status==='pendente').reduce((s,r)=>s+ +r.valor,0), recebido=rows.filter(r=>r.status==='recebido').reduce((s,r)=>s+ +r.valor,0);
-  const cols=[{k:'cliente',l:'Cliente'},{k:'regiao',l:'Região'},{k:'valor',l:'Valor (R$)',f:v=>v?Number(v).toFixed(2):''},{k:'vencimento',l:'Vencimento',f:v=>fmtDate(v)},{k:'data_pagamento',l:'Dt. Pgto',f:v=>fmtDate(v)},{k:'status',l:'Status'},{k:'obs',l:'Obs'}];
+  const cols=[{k:'numero_rota',l:'Rota'},{k:'cliente',l:'Cliente'},{k:'regiao',l:'Região'},{k:'valor',l:'Valor (R$)',f:v=>v?Number(v).toFixed(2):''},{k:'vencimento',l:'Vencimento',f:v=>fmtDate(v)},{k:'data_pagamento',l:'Dt. Pgto',f:v=>fmtDate(v)},{k:'status',l:'Status'},{k:'obs',l:'Obs'}];
   return (
     <div>
       <div className="page-header"><div><div className="page-title">Contas a Receber</div><div className="page-desc">Fretes cobrados dos clientes</div></div>
@@ -42,11 +47,25 @@ export function ContasReceber() {
           <div className="metric-card green"><div className="metric-label">Recebido</div><div className="metric-value" style={{color:'var(--green)'}}>{fmt(recebido)}</div></div>
         </div>
         <div className="card fade-up fade-up-1"><div className="table-wrap"><table>
-          <thead><tr><th>Cliente</th><th>Região</th><th>Valor</th><th>Vencimento</th><th>Pgto.</th><th>Status</th><th>Ação</th></tr></thead>
+          <thead><tr><th>Rota</th><th>Cliente</th><th>Região</th><th>Valor</th><th>Vencimento</th><th>Pgto.</th><th>Status</th><th>Ação</th></tr></thead>
           <tbody>
-            {loading && Array.from({length:4}).map((_,i)=>(<tr key={i}>{Array.from({length:7}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'60%'}}/></td>))}</tr>))}
-            {!loading&&!rows.length&&<tr><td colSpan={7} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>Nenhum lançamento encontrado</td></tr>}
-            {rows.map(r=>(<tr key={r.id}><td className="fw-500">{r.cliente}</td><td style={{fontSize:12}}>{r.regiao||'—'}</td><td className="fw-600">{fmt(r.valor)}</td><td style={{fontSize:12}}>{fmtDate(r.vencimento)}</td><td style={{fontSize:12}}>{fmtDate(r.data_pagamento)}</td><td><StatusBadge status={r.status}/></td><td>{r.status==='pendente'&&<button className="btn btn-ghost btn-sm" onClick={()=>marcarRecebido(r.id)}>Receber</button>}</td></tr>))}
+            {loading && Array.from({length:4}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'60%'}}/></td>))}</tr>))}
+            {!loading&&!rows.length&&<tr><td colSpan={8} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>Nenhum lançamento encontrado</td></tr>}
+            {rows.map(r=>(
+              <tr key={r.id}>
+                <td className="font-mono fw-600" style={{color:'var(--accent)',fontSize:12}}>{r.numero_rota||'—'}</td>
+                <td className="fw-500">{r.cliente}</td>
+                <td style={{fontSize:12}}>{r.regiao||'—'}</td>
+                <td className="fw-600">{fmt(r.valor)}</td>
+                <td style={{fontSize:12}}>{fmtDate(r.vencimento)}</td>
+                <td style={{fontSize:12}}>{fmtDate(r.data_pagamento)}</td>
+                <td><StatusBadge status={r.status}/></td>
+                <td style={{whiteSpace:'nowrap'}}>
+                  {r.status==='pendente'&&<button className="btn btn-ghost btn-sm" onClick={()=>marcarRecebido(r.id)}>Receber</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>excluir(r.id)} style={{color:'#DC2626'}} title="Excluir lançamento">🗑️</button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table></div></div>
       </div>
@@ -65,10 +84,18 @@ export function ContasPagar() {
   const [filtroTipo, setFiltroTipo] = useState('');
   const { data, loading, refetch } = useFetch('/financeiro/pagar');
   const { toast, showToast } = useToast();
-  const rows = (data||[]).filter(r => !filtroTipo || r.tipo_lancamento === filtroTipo);
+  const rows = (data||[])
+    .filter(r => r.status !== 'cancelado')
+    .filter(r => !filtroTipo || r.tipo_lancamento === filtroTipo);
   const marcarPago = async (id) => { try { await api.patch(`/financeiro/pagar/${id}/pagar`,{}); showToast('Marcado como pago!'); refetch(); } catch(e) { showToast(e.message,'error'); } };
+  const excluir = async (id) => {
+    if (!confirm('Excluir este lançamento permanentemente?')) return;
+    try { await api.delete(`/financeiro/pagar/${id}`); showToast('Lançamento excluído!'); refetch(); }
+    catch(e) { showToast(e.message,'error'); }
+  };
   const total=rows.reduce((s,r)=>s+ +r.valor,0), emAberto=rows.filter(r=>r.status==='pendente').reduce((s,r)=>s+ +r.valor,0), pago=rows.filter(r=>r.status==='pago').reduce((s,r)=>s+ +r.valor,0);
   const cols=[
+    {k:'numero_rota',l:'Rota'},
     {k:'tipo_lancamento',l:'Tipo',f:v=>TIPO_LANCAMENTO_LABEL[v]?.label||v||''},
     {k:'descricao',l:'Descrição'},
     {k:'transportadora_nome',l:'Transportadora'},
@@ -99,14 +126,15 @@ export function ContasPagar() {
           <div className="metric-card"><div className="metric-label">Lançamentos</div><div className="metric-value">{rows.length}</div></div>
         </div>
         <div className="card fade-up fade-up-1"><div className="table-wrap"><table>
-          <thead><tr><th>Tipo</th><th>Descrição</th><th>Benef. / Motorista</th><th>Valor</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead>
+          <thead><tr><th>Rota</th><th>Tipo</th><th>Descrição</th><th>Benef. / Motorista</th><th>Valor</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead>
           <tbody>
-            {loading && Array.from({length:4}).map((_,i)=>(<tr key={i}>{Array.from({length:7}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'60%'}}/></td>))}</tr>))}
-            {!loading&&!rows.length&&<tr><td colSpan={7} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>Nenhum lançamento encontrado</td></tr>}
+            {loading && Array.from({length:4}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'60%'}}/></td>))}</tr>))}
+            {!loading&&!rows.length&&<tr><td colSpan={8} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>Nenhum lançamento encontrado</td></tr>}
             {rows.map(r=>{
               const tipoInfo = TIPO_LANCAMENTO_LABEL[r.tipo_lancamento] || {label: r.tipo_lancamento||'—', badge:'badge-gray'};
               return (
                 <tr key={r.id}>
+                  <td className="font-mono fw-600" style={{color:'var(--accent)',fontSize:12}}>{r.numero_rota||'—'}</td>
                   <td><span className={`badge ${tipoInfo.badge}`}>{tipoInfo.label}</span></td>
                   <td style={{fontSize:12,color:'var(--text2)',maxWidth:200}}>
                     <div className="truncate">{r.descricao || '—'}</div>
@@ -120,7 +148,10 @@ export function ContasPagar() {
                   <td className="fw-600">{fmt(r.valor)}</td>
                   <td style={{fontSize:12}}>{fmtDate(r.vencimento)}</td>
                   <td><StatusBadge status={r.status}/></td>
-                  <td>{r.status==='pendente'&&<button className="btn btn-ghost btn-sm" onClick={()=>marcarPago(r.id)}>Pagar</button>}</td>
+                  <td style={{whiteSpace:'nowrap'}}>
+                    {r.status==='pendente'&&<button className="btn btn-ghost btn-sm" onClick={()=>marcarPago(r.id)}>Pagar</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={()=>excluir(r.id)} style={{color:'#DC2626'}} title="Excluir lançamento">🗑️</button>
+                  </td>
                 </tr>
               );
             })}

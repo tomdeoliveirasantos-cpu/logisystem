@@ -52,6 +52,17 @@ router.patch('/receber/:id/receber', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// DELETE /api/financeiro/receber/:id
+router.delete('/receber/:id', async (req, res, next) => {
+  try {
+    const { rowCount } = await db.query(
+      `DELETE FROM logi_contas_receber WHERE id=$1`, [req.params.id]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Lançamento não encontrado' });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
 // ════ CONTAS A PAGAR ══════════════════════════════════════════════════════════
 // GET /api/financeiro/pagar
 router.get('/pagar', async (req, res, next) => {
@@ -63,11 +74,13 @@ router.get('/pagar', async (req, res, next) => {
     const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const { rows } = await db.query(
       `SELECT cp.*, t.nome AS transportadora_nome, m.nome AS motorista_nome,
+              o.numero_rota, o.data AS data_entrega,
               tf.regiao, tf.valor_base AS frete_referencia,
               cp.tipo_lancamento, cp.descricao
        FROM logi_contas_pagar cp
        LEFT JOIN logi_transportadoras t ON t.id = cp.transportadora_id
        LEFT JOIN logi_motoristas m ON m.id = cp.motorista_id
+       LEFT JOIN logi_ordens_transporte o ON o.id = cp.ordem_id
        LEFT JOIN logi_tabela_fretes tf ON tf.id = cp.tabela_frete_id
        ${wc} ORDER BY cp.vencimento`, params
     );
@@ -98,6 +111,17 @@ router.patch('/pagar/:id/pagar', async (req, res, next) => {
        WHERE id=$1 RETURNING *`, [req.params.id]
     );
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/financeiro/pagar/:id
+router.delete('/pagar/:id', async (req, res, next) => {
+  try {
+    const { rowCount } = await db.query(
+      `DELETE FROM logi_contas_pagar WHERE id=$1`, [req.params.id]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Lançamento não encontrado' });
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 

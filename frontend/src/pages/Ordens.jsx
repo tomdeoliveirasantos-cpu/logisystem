@@ -625,9 +625,7 @@ export default function Ordens() {
                   <Field label={<span>Tipo de Frota <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                     <Select value={form.tipo_frota||''} onChange={e=>set('tipo_frota',e.target.value)}
                       options={[
-                        {value:'',label:'Selecione...'},
                         {value:'proprio',label:'🏠 Próprio'},
-                        {value:'agregado',label:'🚛 Agregado'},
                         {value:'terceiro',label:'🚚 Terceiro'},
                       ]} />
                   </Field>
@@ -706,10 +704,7 @@ export default function Ordens() {
                 <div className="form-grid cols-2">
                   <Field label={<span>Tipo de Frete <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(usa do veículo, mas pode mudar)</span></span>}>
                     <Select value={form.tipo_frete||''} onChange={e=>set('tipo_frete',e.target.value)}
-                      options={[
-                        {value:'',label:'— Selecione —'},
-                        ...['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v})),
-                      ]} />
+                      options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v}))} />
                   </Field>
                   <Field label={<span>Multiplicador <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(ex: 2 = paga/recebe 2× o frete)</span></span>}>
                     <Input type="number" min={1} max={9} step={1}
@@ -800,7 +795,7 @@ export default function Ordens() {
                   </>
                 )}
                 {/* Valores monetários só para não-motorista */}
-                {!ehMotorista && visivel('ajuda_diesel') && form.tipo_frota === 'agregado' && (
+                {!ehMotorista && visivel('ajuda_diesel') && (
                   <FL label="Ajuda Diesel (R$)" obrig={obrigatorio('ajuda_diesel')}>
                     <Input type="number" step="0.01" min="0" value={form.ajuda_diesel||''} onChange={e=>set('ajuda_diesel',e.target.value)} placeholder="0,00" />
                   </FL>

@@ -309,7 +309,7 @@ export function Veiculos() {
               {/* 1. Frota */}
               <Field label="Frota *">
                 <Select value={form.ag_ft||''} onChange={e=>set('ag_ft',e.target.value)}
-                  options={[{value:'',label:'Selecione...'},{value:'frota',label:'🏠 Próprio'},{value:'agregado',label:'🚛 Agregado'}]}/>
+                  options={[{value:'frota',label:'🏠 Próprio'},{value:'agregado',label:'🚛 Agregado'}]}/>
               </Field>
               {/* 2. Placa */}
               <Field label="Placa *">
@@ -318,7 +318,7 @@ export function Veiculos() {
               {/* 3. Tipo */}
               <Field label="Tipo *">
                 <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
-                  options={[{value:'',label:'Selecione...'},...['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER'].map(v=>({value:v,label:v}))]}/>
+                  options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER'].map(v=>({value:v,label:v}))}/>
               </Field>
               <Field label="Modelo">
                 <Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/>
@@ -484,7 +484,6 @@ export function Motoristas() {
                 <Field label="Tipo de Colaborador *">
                   <Select value={form.tipo_colaborador||''} onChange={e=>set('tipo_colaborador',e.target.value)}
                     options={[
-                      {value:'',label:'— Selecione —'},
                       {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
                       {value:'motorista_agregado',label:'🚛 Motorista Agregado'},
                       {value:'ajudante',label:'👷 Ajudante'},

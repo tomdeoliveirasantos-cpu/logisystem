@@ -94,14 +94,6 @@ export default function PreCadastroModal({
               <Field label="Telefone">
                 <Input value={form.telefone || ''} onChange={e => setForm({ ...form, telefone: e.target.value })} />
               </Field>
-              <Field label="Transportadora">
-                <Select
-                  value={form.transportadora_id || ''}
-                  onChange={e => setForm({ ...form, transportadora_id: e.target.value })}
-                  options={[{ value: '', label: '— Nenhuma —' },
-                    ...(transportadoras || []).map(t => ({ value: t.id, label: t.nome }))]}
-                />
-              </Field>
             </>
           ) : (
             <>
@@ -110,7 +102,6 @@ export default function PreCadastroModal({
                   value={form.ag_ft || ''}
                   onChange={e => setForm({ ...form, ag_ft: e.target.value })}
                   options={[
-                    { value: '', label: 'Selecione...' },
                     { value: 'frota', label: '🏠 Próprio' },
                     { value: 'agregado', label: '🚛 Agregado' },
                   ]}
@@ -130,7 +121,6 @@ export default function PreCadastroModal({
                   value={form.tipo || ''}
                   onChange={e => setForm({ ...form, tipo: e.target.value })}
                   options={[
-                    { value: '', label: 'Selecione...' },
                     { value: 'HR', label: 'HR' },
                     { value: 'IVECO', label: 'IVECO' },
                     { value: '3/4', label: '3/4' },

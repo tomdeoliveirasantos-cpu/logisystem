@@ -7,42 +7,165 @@ const db = require('../db');
 
 const motoristasRouter = express.Router();
 
+// Upload de CNH
+const MOT_UPLOADS_DIR = path.join(__dirname, '../../uploads/motoristas');
+if (!fs.existsSync(MOT_UPLOADS_DIR)) fs.mkdirSync(MOT_UPLOADS_DIR, { recursive: true });
+
+const motStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, MOT_UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ts = Date.now();
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${ts}_${safe}`);
+  },
+});
+const motUpload = multer({
+  storage: motStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = ['.pdf','.jpg','.jpeg','.png'];
+    cb(null, ok.includes(path.extname(file.originalname).toLowerCase()));
+  },
+});
+
 motoristasRouter.get('/', async (req, res, next) => {
   try {
+    const { status_cadastro } = req.query;
+    const params = [];
+    const where = ['mo.ativo = true'];
+    if (status_cadastro) { params.push(status_cadastro); where.push(`mo.status_cadastro = $${params.length}`); }
     const { rows } = await db.query(
       `SELECT mo.*, t.nome AS transportadora_nome,
               v.placa AS veiculo_padrao_placa, v.tipo AS veiculo_padrao_tipo
        FROM logi_motoristas mo
        LEFT JOIN logi_transportadoras t ON t.id = mo.transportadora_id
        LEFT JOIN logi_veiculos v ON v.id = mo.veiculo_padrao_id
-       WHERE mo.ativo = true ORDER BY mo.nome`
+       WHERE ${where.join(' AND ')} ORDER BY mo.nome`, params
     );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
-motoristasRouter.post('/', async (req, res, next) => {
+motoristasRouter.get('/:id', async (req, res, next) => {
   try {
-    const { transportadora_id, nome, cnh, telefone, veiculo_padrao_id } = req.body;
     const { rows } = await db.query(
-      `INSERT INTO logi_motoristas (transportadora_id, nome, cnh, telefone, veiculo_padrao_id)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [transportadora_id, nome, cnh, telefone, veiculo_padrao_id || null]
+      `SELECT mo.*, t.nome AS transportadora_nome
+       FROM logi_motoristas mo
+       LEFT JOIN logi_transportadoras t ON t.id = mo.transportadora_id
+       WHERE mo.id = $1`, [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// Cadastro completo (admin)
+motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, next) => {
+  try {
+    const {
+      transportadora_id, nome, cnh, telefone, veiculo_padrao_id,
+      cnh_validade, cnh_categoria,
+      endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento,
+      endereco_bairro, endereco_cidade, endereco_estado,
+      contato_esposa, contato_pai, contato_mae, contato_outro_nome, contato_outro_telefone,
+      status_cadastro = 'completo',
+    } = req.body;
+    const cnh_arquivo_nome = req.file ? req.file.originalname : null;
+    const cnh_arquivo_path = req.file ? req.file.filename     : null;
+
+    const { rows } = await db.query(
+      `INSERT INTO logi_motoristas
+        (transportadora_id, nome, cnh, telefone, veiculo_padrao_id,
+         cnh_validade, cnh_categoria, cnh_arquivo_nome, cnh_arquivo_path,
+         endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento,
+         endereco_bairro, endereco_cidade, endereco_estado,
+         contato_esposa, contato_pai, contato_mae, contato_outro_nome, contato_outro_telefone,
+         status_cadastro)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       RETURNING *`,
+      [transportadora_id||null, nome, cnh||null, telefone||null, veiculo_padrao_id || null,
+       cnh_validade||null, cnh_categoria||null, cnh_arquivo_nome, cnh_arquivo_path,
+       endereco_cep||null, endereco_logradouro||null, endereco_numero||null, endereco_complemento||null,
+       endereco_bairro||null, endereco_cidade||null, endereco_estado||null,
+       contato_esposa||null, contato_pai||null, contato_mae||null,
+       contato_outro_nome||null, contato_outro_telefone||null,
+       status_cadastro]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
 });
 
-motoristasRouter.put('/:id', async (req, res, next) => {
+// Pré-cadastro rápido (Supervisor)
+motoristasRouter.post('/pre-cadastro', async (req, res, next) => {
   try {
-    const { transportadora_id, nome, cnh, telefone, veiculo_padrao_id } = req.body;
+    const { nome, cnh, telefone, transportadora_id } = req.body;
+    if (!nome) return res.status(400).json({ error: 'nome é obrigatório' });
     const { rows } = await db.query(
-      `UPDATE logi_motoristas SET transportadora_id=$1, nome=$2, cnh=$3, telefone=$4, veiculo_padrao_id=$5, updated_at=NOW()
-       WHERE id=$6 RETURNING *`,
-      [transportadora_id, nome, cnh, telefone, veiculo_padrao_id || null, req.params.id]
+      `INSERT INTO logi_motoristas (nome, cnh, telefone, transportadora_id, status_cadastro)
+       VALUES ($1, $2, $3, $4, 'pendente_admin') RETURNING *`,
+      [nome, cnh || null, telefone || null, transportadora_id || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+motoristasRouter.put('/:id', motUpload.single('cnh_arquivo'), async (req, res, next) => {
+  try {
+    const sets = [];
+    const params = [];
+    const add = (col, val) => {
+      if (val !== undefined) { params.push(val); sets.push(`${col}=$${params.length}`); }
+    };
+    const b = req.body;
+    add('transportadora_id', b.transportadora_id);
+    add('nome', b.nome);
+    add('cnh', b.cnh);
+    add('telefone', b.telefone);
+    add('veiculo_padrao_id', b.veiculo_padrao_id);
+    add('cnh_validade', b.cnh_validade);
+    add('cnh_categoria', b.cnh_categoria);
+    add('endereco_cep', b.endereco_cep);
+    add('endereco_logradouro', b.endereco_logradouro);
+    add('endereco_numero', b.endereco_numero);
+    add('endereco_complemento', b.endereco_complemento);
+    add('endereco_bairro', b.endereco_bairro);
+    add('endereco_cidade', b.endereco_cidade);
+    add('endereco_estado', b.endereco_estado);
+    add('contato_esposa', b.contato_esposa);
+    add('contato_pai', b.contato_pai);
+    add('contato_mae', b.contato_mae);
+    add('contato_outro_nome', b.contato_outro_nome);
+    add('contato_outro_telefone', b.contato_outro_telefone);
+    add('status_cadastro', b.status_cadastro);
+    if (req.file) {
+      add('cnh_arquivo_nome', req.file.originalname);
+      add('cnh_arquivo_path', req.file.filename);
+    }
+    if (!sets.length) return res.status(400).json({ error: 'Nada a atualizar' });
+
+    sets.push(`updated_at=NOW()`);
+    params.push(req.params.id);
+    const { rows } = await db.query(
+      `UPDATE logi_motoristas SET ${sets.join(',')} WHERE id=$${params.length} RETURNING *`,
+      params
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// Download CNH
+motoristasRouter.get('/:id/cnh', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT cnh_arquivo_path, cnh_arquivo_nome FROM logi_motoristas WHERE id=$1', [req.params.id]
+    );
+    if (!rows.length || !rows[0].cnh_arquivo_path) {
+      return res.status(404).json({ error: 'CNH não encontrada' });
+    }
+    const filePath = path.join(MOT_UPLOADS_DIR, rows[0].cnh_arquivo_path);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado' });
+    res.download(filePath, rows[0].cnh_arquivo_nome);
   } catch (err) { next(err); }
 });
 

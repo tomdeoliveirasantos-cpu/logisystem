@@ -929,7 +929,7 @@ export default function Ordens() {
         onClose={() => setShowPreAju(false)}
         onSuccess={async (criado) => {
           showToast(`Ajudante "${criado.nome}" cadastrado`, 'success');
-          await refetchMot();
+          await Promise.all([refetchMot(), refetchAju()]);
           setAjudantesIds(prev =>
             prev.some(x => String(x) === String(criado.id)) ? prev : [...prev, criado.id]
           );

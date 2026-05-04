@@ -18,7 +18,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         { to: '/clientes',        icon: '👥', label: 'Clientes',          mod: 'clientes' },
         { to: '/transportadoras', icon: '🏢', label: 'Transportadoras',   mod: 'transportadoras' },
         { to: '/veiculos',        icon: '🚛', label: 'Frota / Veículos',  mod: 'veiculos' },
-        { to: '/motoristas',      icon: '👤', label: 'Motoristas',        mod: 'motoristas' },
+        { to: '/motoristas',      icon: '👤', label: 'Colaboradores',     mod: 'motoristas' },
         { to: '/fornecedores',    icon: '🏪', label: 'Fornecedores',      mod: 'manutencoes' },
         { to: '/cadastros-motorista', icon: '📋', label: 'Cadastros',         mod: 'motoristas' },
       ],

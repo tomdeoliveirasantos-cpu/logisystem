@@ -143,7 +143,6 @@ motoristasRouter.put('/:id', motUpload.single('cnh_arquivo'), async (req, res, n
     }
     if (!sets.length) return res.status(400).json({ error: 'Nada a atualizar' });
 
-    sets.push(`updated_at=NOW()`);
     params.push(req.params.id);
     const { rows } = await db.query(
       `UPDATE logi_motoristas SET ${sets.join(',')} WHERE id=$${params.length} RETURNING *`,

@@ -83,58 +83,6 @@ function FL({ label, obrig, children }) {
   );
 }
 
-// ════ Card de resumo do frete (exibido no modal) ═════════════════════════════
-function FreteResumo({ veiculo, regiao, freteData, loading, temAjudante, valorAjudante }) {
-  if (!veiculo) return null;
-
-  const valorPagar = freteData?.pagar ? Number(freteData.pagar.valor_base) : 0;
-  const ajudante = temAjudante ? (valorAjudante || 0) : 0;
-  const totalPagar = valorPagar + ajudante;
-
-  return (
-    <div style={{
-      padding: '14px 16px', background: 'var(--bg2)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', marginBottom: 14,
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
-        💰 Valores de Frete (automático)
-      </div>
-      {loading ? (
-        <div style={{ fontSize: 12, color: 'var(--text3)' }}>Buscando valores...</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-          <div style={{ padding: '10px 12px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 'var(--radius)' }}>
-            <div style={{ fontSize: 10, color: '#16A34A', fontWeight: 600, marginBottom: 4 }}>RECEBER (Léo Madeiras)</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#16A34A' }}>
-              {freteData?.receber ? fmt(freteData.receber.valor) : '—'}
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
-              Fixo por veículo: {veiculo.tipo}
-            </div>
-          </div>
-          <div style={{ padding: '10px 12px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 'var(--radius)' }}>
-            <div style={{ fontSize: 10, color: '#B45309', fontWeight: 600, marginBottom: 4 }}>PAGAR (Terceiro)</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#B45309' }}>
-              {totalPagar > 0 ? fmt(totalPagar) : '—'}
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
-              {regiao && valorPagar > 0 && `Frete: ${fmt(valorPagar)}`}
-              {regiao && valorPagar > 0 && ajudante > 0 && ` + Ajud: ${fmt(ajudante)}`}
-              {!regiao && veiculo.ag_ft === 'terceiro' && 'Selecione a região'}
-              {veiculo.ag_ft === 'frota' && 'Frota própria'}
-            </div>
-          </div>
-        </div>
-      )}
-      {!regiao && veiculo.ag_ft === 'terceiro' && (
-        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', fontStyle: 'italic' }}>
-          Preencha a região para calcular o frete a pagar.
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Ordens() {
   const today = new Date().toISOString().split('T')[0];
   const [filtInicio, setFiltInicio] = useState('');
@@ -219,8 +167,8 @@ export default function Ordens() {
     if (!form.motorista_id) erros.push('Motorista');
     if (!form.veiculo_id) erros.push('Veículo');
     if (!form.numero_rota) erros.push('Número da Rota');
-    if (visivel('ajuda_diesel') && obrigatorio('ajuda_diesel') && !form.ajuda_diesel) erros.push('Ajuda Diesel');
-    if (visivel('taxa_descarga') && obrigatorio('taxa_descarga') && !form.taxa_descarga) erros.push('Taxa Descarga');
+    if (form.tipo_frota === 'terceiro' && visivel('ajuda_diesel') && obrigatorio('ajuda_diesel') && !form.ajuda_diesel) erros.push('Ajuda Diesel');
+    if (form.tipo_frota === 'terceiro' && visivel('taxa_descarga') && obrigatorio('taxa_descarga') && !form.taxa_descarga) erros.push('Taxa Descarga');
     if (visivel('obs') && obrigatorio('obs') && !form.obs) erros.push('Observações');
     if (visivel('anexo') && obrigatorio('anexo') && !anexo) erros.push('Anexo');
     return erros;
@@ -245,10 +193,11 @@ export default function Ordens() {
       if(form.regiao) fd.append('regiao', form.regiao);
       if(form.tipo) fd.append('tipo', form.tipo);
       if(visivel('obs') && form.obs) fd.append('obs', form.obs);
-      // Valores monetários só pra não-motorista
+      // Valores monetários só pra não-motorista — Ajuda Diesel e Taxa Descarga só pra Terceiro
       if (!ehMotorista) {
-        fd.append('ajuda_diesel', visivel('ajuda_diesel') ? (form.ajuda_diesel||0) : 0);
-        fd.append('taxa_descarga', visivel('taxa_descarga') ? (form.taxa_descarga||0) : 0);
+        const ehTerceiro = form.tipo_frota === 'terceiro';
+        fd.append('ajuda_diesel', (ehTerceiro && visivel('ajuda_diesel')) ? (form.ajuda_diesel||0) : 0);
+        fd.append('taxa_descarga', (ehTerceiro && visivel('taxa_descarga')) ? (form.taxa_descarga||0) : 0);
         fd.append('ajudante_extra', form.ajudante_extra || 0);
       }
       // KM apenas para tipo_frota=proprio
@@ -764,17 +713,7 @@ export default function Ordens() {
                 </Field>
               </div>
 
-              {/* ════ Card de resumo de frete (só pra não-motorista) ════ */}
-              {!ehMotorista && (
-                <FreteResumo
-                  veiculo={veiculoSelecionado}
-                  regiao={form.regiao}
-                  freteData={freteData}
-                  loading={freteLoading}
-                  temAjudante={!!(form.ajudante_extra && parseFloat(form.ajudante_extra) > 0)}
-                  valorAjudante={parseFloat(form.ajudante_extra) || 0}
-                />
-              )}
+              {/* Card de resumo de frete removido — valores aparecem na lista de OTs após salvar */}
 
               {/* Campos configuráveis */}
               <div className="form-grid cols-2" style={{marginBottom:14}}>
@@ -794,13 +733,14 @@ export default function Ordens() {
                     )}
                   </>
                 )}
-                {/* Valores monetários só para não-motorista */}
-                {!ehMotorista && visivel('ajuda_diesel') && (
+                {/* Ajuda Diesel — apenas Terceiro */}
+                {!ehMotorista && form.tipo_frota === 'terceiro' && visivel('ajuda_diesel') && (
                   <FL label="Ajuda Diesel (R$)" obrig={obrigatorio('ajuda_diesel')}>
                     <Input type="number" step="0.01" min="0" value={form.ajuda_diesel||''} onChange={e=>set('ajuda_diesel',e.target.value)} placeholder="0,00" />
                   </FL>
                 )}
-                {!ehMotorista && visivel('taxa_descarga') && (
+                {/* Taxa Descarga — apenas Terceiro */}
+                {!ehMotorista && form.tipo_frota === 'terceiro' && visivel('taxa_descarga') && (
                   <FL label="Taxa Descarga (R$)" obrig={obrigatorio('taxa_descarga')}>
                     <Input type="number" step="0.01" min="0" value={form.taxa_descarga||''} onChange={e=>set('taxa_descarga',e.target.value)} placeholder="0,00" />
                   </FL>

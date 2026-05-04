@@ -254,9 +254,9 @@ async function regenerarFinanceiroOT(client, ordemId) {
     }
   } catch (e) { console.error('CAP ajudantes:', e.message); }
 
-  // Ajuda diesel (R$ direto da OT, se preenchido)
+  // Ajuda diesel (só se tipo_frota=terceiro)
   const ajuDiesel = parseFloat(ot.ajuda_diesel) || 0;
-  if (ajuDiesel > 0) {
+  if (ajuDiesel > 0 && tipoFrota === 'terceiro') {
     await client.query(
       `INSERT INTO logi_contas_pagar
         (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
@@ -266,9 +266,9 @@ async function regenerarFinanceiroOT(client, ordemId) {
     );
   }
 
-  // Taxa descarga
+  // Taxa descarga (só se tipo_frota=terceiro)
   const taxaDesc = parseFloat(ot.taxa_descarga) || 0;
-  if (taxaDesc > 0) {
+  if (taxaDesc > 0 && tipoFrota === 'terceiro') {
     await client.query(
       `INSERT INTO logi_contas_pagar
         (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)

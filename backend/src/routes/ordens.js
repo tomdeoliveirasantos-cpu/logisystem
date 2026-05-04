@@ -216,12 +216,15 @@ async function regenerarFinanceiroOT(client, ordemId) {
   // Ajudante extra (R$ direto da OT, se preenchido) — compat com campo único
   const ajuExtra = parseFloat(ot.ajudante_extra) || 0;
   if (ajuExtra > 0) {
+    const nomeAjud = (ot.ajudante_nome || '').trim();
+    const desc = nomeAjud
+      ? `Ajudante Extra (${nomeAjud}) - Rota ${ot.numero_rota || ordemId}`
+      : `Ajudante Extra - Rota ${ot.numero_rota || ordemId}`;
     await client.query(
       `INSERT INTO logi_contas_pagar
         (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
        VALUES ($1,$2,$3,$4,$5,$6)`,
-      [ordemId, ot.motorista_id, ajuExtra, ot.data,
-       `Ajudante Extra - Rota ${ot.numero_rota || ordemId}`, 'diaria_ajudante']
+      [ordemId, ot.motorista_id, ajuExtra, ot.data, desc, 'diaria_ajudante']
     );
   }
 
@@ -390,7 +393,7 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
       quant_entregas,                      // estimativa
       saida, regiao,
       status='pendente', tipo, pagto,
-      ajuda_diesel=0, taxa_descarga=0, ajudante_extra=0,
+      ajuda_diesel=0, taxa_descarga=0, ajudante_extra=0, ajudante_nome,
       n_cont, q_capas=0, obs,
       km_saida, km_chegada,
       paradas,                             // array opcional
@@ -418,17 +421,17 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
       `INSERT INTO logi_ordens_transporte
         (cliente_id,motorista_id,veiculo_id,data,numero_rota,
          tipo_frota,tipo_frete,multiplicador_frete,quant_entregas,saida,regiao,status,tipo,pagto,
-         ajuda_diesel,taxa_descarga,ajudante_extra,
+         ajuda_diesel,taxa_descarga,ajudante_extra,ajudante_nome,
          n_cont,q_capas,obs,
          anexo_nome,anexo_path,anexo_tamanho,
          km_saida,km_chegada)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
        RETURNING *`,
       [cliente_id||null, motorista_id||null, veiculo_id||null, data,
        numero_rota||null, tipo_frota||null, tipo_frete||null, parseInt(multiplicador_frete,10)||1,
        quant_entregas||null,
        saida||null, regiao||null, status, tipo||null, pagto||null,
-       ajuda_diesel||0, taxa_descarga||0, ajudante_extra||0,
+       ajuda_diesel||0, taxa_descarga||0, ajudante_extra||0, ajudante_nome||null,
        n_cont||null, q_capas||0, obs||null,
        anexo_nome, anexo_path, anexo_size,
        km_saida||null, km_chegada||null]
@@ -480,7 +483,7 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
       cliente_id, motorista_id, veiculo_id, data, numero_rota,
       tipo_frota, tipo_frete, multiplicador_frete, quant_entregas,
       saida, regiao, tipo, pagto,
-      ajuda_diesel, taxa_descarga, ajudante_extra,
+      ajuda_diesel, taxa_descarga, ajudante_extra, ajudante_nome,
       n_cont, q_capas, obs,
       km_saida, km_chegada,
       paradas,
@@ -531,6 +534,7 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
     add('ajuda_diesel', ajuda_diesel === undefined ? undefined : (ajuda_diesel || 0));
     add('taxa_descarga', taxa_descarga === undefined ? undefined : (taxa_descarga || 0));
     add('ajudante_extra', ajudante_extra === undefined ? undefined : (ajudante_extra || 0));
+    add('ajudante_nome', ajudante_nome === undefined ? undefined : (ajudante_nome || null));
     add('n_cont', n_cont);
     add('q_capas', q_capas === undefined ? undefined : (q_capas || 0));
     add('obs', obs);

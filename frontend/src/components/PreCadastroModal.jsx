@@ -16,6 +16,8 @@ import { Field, Input, Select } from './UI';
 export default function PreCadastroModal({
   tipo, open, onClose, onSuccess,
   transportadoras = [],
+  tipoColaboradorPadrao = null,    // ex: 'ajudante' | 'motorista_proprio' | null
+  tituloOverride = null,           // override do título do modal
 }) {
   const [form, setForm] = useState({});
   const [erro, setErro] = useState('');
@@ -24,7 +26,7 @@ export default function PreCadastroModal({
   if (!open) return null;
 
   const isMotorista = tipo === 'motorista';
-  const titulo = isMotorista ? '+ Novo Motorista (rápido)' : '+ Novo Veículo (rápido)';
+  const titulo = tituloOverride || (isMotorista ? '+ Novo Motorista (rápido)' : '+ Novo Veículo (rápido)');
 
   function fechar() {
     setForm({});
@@ -45,7 +47,10 @@ export default function PreCadastroModal({
     setSalvando(true);
     try {
       const endpoint = isMotorista ? '/motoristas/pre-cadastro' : '/veiculos/pre-cadastro';
-      const criado = await api.post(endpoint, form);
+      const payload = isMotorista && tipoColaboradorPadrao
+        ? { ...form, tipo_colaborador: tipoColaboradorPadrao }
+        : form;
+      const criado = await api.post(endpoint, payload);
       onSuccess?.(criado);
       fechar();
     } catch (e) {

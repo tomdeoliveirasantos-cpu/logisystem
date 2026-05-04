@@ -106,7 +106,7 @@ export default function Ordens() {
   const { data, loading, refetch }   = useFetch(`/ordens?${qs}`, [filtInicio, filtFim, filtStatus]);
   const { data: clientes }                            = useFetch('/clientes');
   const { data: motoristas, refetch: refetchMot }     = useFetch('/motoristas');
-  const { data: ajudantesDisp }                       = useFetch('/motoristas?tipo_colaborador=ajudante');
+  const { data: ajudantesDisp, refetch: refetchAju } = useFetch('/motoristas?tipo_colaborador=ajudante');
   const { data: veiculos,   refetch: refetchVei }     = useFetch('/veiculos');
   const { data: regioes }                             = useFetch('/financeiro/fretes/regioes');
 
@@ -199,6 +199,7 @@ export default function Ordens() {
         fd.append('ajuda_diesel', (ehTerceiro && visivel('ajuda_diesel')) ? (form.ajuda_diesel||0) : 0);
         fd.append('taxa_descarga', (ehTerceiro && visivel('taxa_descarga')) ? (form.taxa_descarga||0) : 0);
         fd.append('ajudante_extra', form.ajudante_extra || 0);
+        fd.append('ajudante_nome', (form.ajudante_nome||'').trim());
       }
       // KM apenas para tipo_frota=proprio
       if (form.tipo_frota === 'proprio') {
@@ -246,6 +247,7 @@ export default function Ordens() {
   const [ajudantesIds, setAjudantesIds] = useState([]);
   const [showPreMot, setShowPreMot] = useState(false);
   const [showPreVei, setShowPreVei] = useState(false);
+  const [showPreAju, setShowPreAju] = useState(false);
   const { data: transportadoras } = useFetch('/transportadoras');
   // Perfil do usuário (para esconder valores monetários se for motorista)
   const userPerfil = (() => {
@@ -278,6 +280,7 @@ export default function Ordens() {
         ajuda_diesel: ordemExistente.ajuda_diesel || '',
         taxa_descarga: ordemExistente.taxa_descarga || '',
         ajudante_extra: ordemExistente.ajudante_extra || '',
+        ajudante_nome: ordemExistente.ajudante_nome || '',
         obs: ordemExistente.obs || '',
         status: ordemExistente.status || 'pendente',
         km_saida: ordemExistente.km_saida || '',
@@ -665,39 +668,57 @@ export default function Ordens() {
                   </Field>
                 </div>
 
-                {/* Ajudantes (multi-select de colaboradores tipo ajudante) — só admin/supervisor */}
+                {/* Ajudantes — só admin/supervisor */}
                 {!ehMotorista && (
-                  <Field label={<span>Ajudantes <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(opcional, múltiplos)</span></span>}>
-                    <div style={{border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:8,minHeight:42,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
-                      {ajudantesIds.map(aId => {
-                        const a = (ajudantesDisp||[]).find(x=>String(x.id)===String(aId));
-                        return (
-                          <span key={aId} style={{display:'inline-flex',alignItems:'center',gap:4,background:'var(--accent-lt)',color:'var(--accent)',padding:'3px 8px',borderRadius:12,fontSize:12}}>
-                            👷 {a?.nome || aId}
-                            <button type="button" onClick={()=>setAjudantesIds(prev=>prev.filter(x=>String(x)!==String(aId)))}
-                              style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button>
-                          </span>
-                        );
-                      })}
-                      <Select value="" onChange={e=>{
-                          if (e.target.value && !ajudantesIds.some(x=>String(x)===String(e.target.value))) {
-                            setAjudantesIds(prev=>[...prev, e.target.value]);
-                          }
-                        }}
-                        style={{flex:1,minWidth:140,border:'none',background:'transparent',padding:0}}
-                        options={[
-                          {value:'',label:ajudantesIds.length ? '+ Adicionar ajudante' : '— Selecione —'},
-                          ...(ajudantesDisp||[])
-                            .filter(a => !ajudantesIds.some(x=>String(x)===String(a.id)))
-                            .map(a => ({value:a.id, label:a.nome})),
-                        ]} />
-                    </div>
-                    {(ajudantesDisp||[]).length === 0 && (
-                      <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
-                        Nenhum colaborador tipo "Ajudante" cadastrado. Cadastre em Colaboradores.
+                  <>
+                    {/* Nome livre (rápido, sem cadastrar) */}
+                    <Field label={<span>Nome do Ajudante <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(texto livre, opcional)</span></span>}>
+                      <Input
+                        value={form.ajudante_nome||''}
+                        onChange={e=>set('ajudante_nome',e.target.value)}
+                        placeholder="Ex: João (sem cadastrar)"
+                      />
+                    </Field>
+
+                    {/* Multi-select de ajudantes cadastrados (com histórico) */}
+                    <Field label={<span>Ou selecionar Cadastrados <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(múltiplos)</span></span>}>
+                      <div style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+                        <div style={{flex:1,border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:8,minHeight:42,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
+                          {ajudantesIds.map(aId => {
+                            const a = (ajudantesDisp||[]).find(x=>String(x.id)===String(aId));
+                            return (
+                              <span key={aId} style={{display:'inline-flex',alignItems:'center',gap:4,background:'var(--accent-lt)',color:'var(--accent)',padding:'3px 8px',borderRadius:12,fontSize:12}}>
+                                👷 {a?.nome || aId}
+                                <button type="button" onClick={()=>setAjudantesIds(prev=>prev.filter(x=>String(x)!==String(aId)))}
+                                  style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button>
+                              </span>
+                            );
+                          })}
+                          <Select value="" onChange={e=>{
+                              if (e.target.value && !ajudantesIds.some(x=>String(x)===String(e.target.value))) {
+                                setAjudantesIds(prev=>[...prev, e.target.value]);
+                              }
+                            }}
+                            style={{flex:1,minWidth:140,border:'none',background:'transparent',padding:0}}
+                            options={[
+                              {value:'',label:ajudantesIds.length ? '+ Adicionar ajudante' : '— Selecione —'},
+                              ...(ajudantesDisp||[])
+                                .filter(a => !ajudantesIds.some(x=>String(x)===String(a.id)))
+                                .map(a => ({value:a.id, label:a.nome})),
+                            ]} />
+                        </div>
+                        <button type="button" className="btn btn-ghost" onClick={()=>setShowPreAju(true)}
+                          style={{padding:'6px 12px',whiteSpace:'nowrap'}} title="Pré-cadastro rápido de ajudante">
+                          + Novo
+                        </button>
                       </div>
-                    )}
-                  </Field>
+                      {(ajudantesDisp||[]).length === 0 && (
+                        <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                          Nenhum ajudante cadastrado ainda. Use o campo "Nome do Ajudante" acima ou clique "+ Novo".
+                        </div>
+                      )}
+                    </Field>
+                  </>
                 )}
 
                 {/* Região - full width */}
@@ -897,6 +918,22 @@ export default function Ordens() {
           await refetchVei();
           set('veiculo_id', criado.id);
           setShowPreVei(false);
+        }}
+        transportadoras={transportadoras || []}
+      />
+      <PreCadastroModal
+        tipo="motorista"
+        tipoColaboradorPadrao="ajudante"
+        tituloOverride="+ Novo Ajudante (rápido)"
+        open={showPreAju}
+        onClose={() => setShowPreAju(false)}
+        onSuccess={async (criado) => {
+          showToast(`Ajudante "${criado.nome}" cadastrado`, 'success');
+          await refetchMot();
+          setAjudantesIds(prev =>
+            prev.some(x => String(x) === String(criado.id)) ? prev : [...prev, criado.id]
+          );
+          setShowPreAju(false);
         }}
         transportadoras={transportadoras || []}
       />

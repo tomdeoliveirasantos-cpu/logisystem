@@ -97,15 +97,34 @@ async function run() {
 
     // ── 6. logi_tabela_fretes.tipo_frete: 'agregado' → 'terceiro' ──
     append('\n--- 6. logi_tabela_fretes.tipo_frete ---');
-    try {
-      const r6 = await client.query(
-        `UPDATE logi_tabela_fretes SET tipo_frete='terceiro'
-         WHERE tipo_frete='agregado'`
-      );
-      append(`  ✓ ${r6.rowCount} entradas de tabela de fretes atualizadas`);
-    } catch (e) {
-      append(`  ⚠ erro (campo pode não existir): ${e.message}`);
-    }
+    // Drop constraint
+    await client.query(`
+      DO $$
+      DECLARE
+        c RECORD;
+      BEGIN
+        FOR c IN
+          SELECT conname FROM pg_constraint
+          WHERE conrelid = 'logi_tabela_fretes'::regclass
+            AND contype = 'c'
+            AND conname LIKE '%tipo_frete%'
+        LOOP
+          EXECUTE format('ALTER TABLE logi_tabela_fretes DROP CONSTRAINT %I', c.conname);
+        END LOOP;
+      END $$;
+    `);
+    const r6 = await client.query(
+      `UPDATE logi_tabela_fretes SET tipo_frete='terceiro'
+       WHERE tipo_frete='agregado'`
+    );
+    append(`  ✓ ${r6.rowCount} entradas de tabela de fretes atualizadas`);
+    // Recriar constraint mais permissiva (aceita ambos para o futuro)
+    await client.query(`
+      ALTER TABLE logi_tabela_fretes
+        ADD CONSTRAINT logi_tabela_fretes_tipo_frete_check
+        CHECK (tipo_frete IN ('terceiro','recebido'))
+    `);
+    append('  ✓ nova constraint criada (terceiro|recebido)');
 
     // ── 7. (opcional) Atualizar descrições históricas em CAP ──
     append('\n--- 7. Descrições históricas em logi_contas_pagar ---');

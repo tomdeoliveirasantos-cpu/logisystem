@@ -272,7 +272,7 @@ export function Veiculos() {
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e terceirizados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="veiculos" columns={[
+      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e de terceiros</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="veiculos" columns={[
             {key:'placa',label:'Placa'},{key:'tipo',label:'Tipo'},{key:'modelo',label:'Modelo'},
             {key:'ano',label:'Ano'},{key:'renavam',label:'RENAVAM'},{key:'transportadora_nome',label:'Transportadora'},
             {key:'ag_ft',label:'Ag/Frota'},{key:'proprietario',label:'Proprietário'},

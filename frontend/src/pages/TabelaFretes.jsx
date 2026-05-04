@@ -168,7 +168,7 @@ function TabPagar() {
   return (
     <div>
       <div style={{ padding: '12px 16px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13, color: '#B45309' }}>
-        <strong>Frete pago aos terceiros</strong> — Valor variável por região e tipo de veículo.
+        <strong>Frete pago a terceiros</strong> — Valor variável por região e tipo de veículo.
       </div>
 
       {/* Sub-tabs */}
@@ -351,7 +351,7 @@ export default function TabelaFretes() {
       <div className="page-header">
         <div>
           <div className="page-title">Tabela de Fretes</div>
-          <div className="page-desc">Valores de referência para frete recebido e pago aos terceiros</div>
+          <div className="page-desc">Valores de referência para frete recebido e pago a terceiros</div>
         </div>
       </div>
 

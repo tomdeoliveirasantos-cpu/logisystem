@@ -429,7 +429,9 @@ export default function Ordens() {
             {key:'peso',label:'Peso (kg)',fmt:v=>v?Number(v).toFixed(1):''},
             {key:'nf',label:'NF'},{key:'status',label:'Status'},
           ]} />
-          {selectedIds.length >= 2 && (
+          {/* Romaneio: feature desabilitada na UI - OT já é a rota.
+              Backend e código mantidos para reativação futura. */}
+          {false && selectedIds.length >= 2 && (
             <button className="btn btn-primary" onClick={abrirAgrupar} style={{background:"#7c3aed"}}>
               🔗 Agrupar ({selectedIds.length})
             </button>
@@ -494,7 +496,6 @@ export default function Ordens() {
             <table>
               <thead>
                 <tr>
-                  <th style={{width:30}}><input type="checkbox" onChange={toggleSelectAll} checked={selectedIds.length > 0 && selectedIds.length === rows.filter(r=>!r.grupo_viagem).length} style={{accentColor:"#7c3aed"}} /></th>
                   <th>Data</th>
                   <th>Grupo</th>
                   {visivel('numero_rota') && <th>Rota</th>}
@@ -522,7 +523,6 @@ export default function Ordens() {
                 )}
                 {rows.map(r=>(
                   <tr key={r.id}>
-                    <td><input type="checkbox" checked={selectedIds.includes(r.id)} onChange={()=>toggleSelect(r.id)} disabled={!!r.grupo_viagem} style={{accentColor:"#7c3aed"}} /></td>
                     <td className="font-mono" style={{fontSize:11}}>{fmtDate(r.data)}</td>
                     <td>{r.grupo_viagem ? (
                       <span onClick={()=>desagrupar(r.grupo_viagem)} title="Clique para desagrupar" style={{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:3}}>

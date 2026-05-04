@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { StatusBadge, Field, Input, Select, useToast, Toast, ExportBtn } from '../components/UI';
 import ImportRoteasy from '../components/ImportRoteasy';
@@ -148,6 +149,8 @@ export default function Ordens() {
   const [freteLoading, setFreteLoading] = useState(false);
   const { toast, showToast } = useToast();
   const { visivel, obrigatorio, params: parametros } = useParametros();
+  const { user } = useAuth();
+  const isMotorista = user?.perfil === 'motorista';
 
   const qs = new URLSearchParams();
   if (filtInicio) qs.set('data_inicio', filtInicio);
@@ -233,6 +236,9 @@ export default function Ordens() {
       if(form.motorista_id) fd.append('motorista_id',form.motorista_id);
       if(form.veiculo_id) fd.append('veiculo_id',form.veiculo_id);
       if(form.ajudante_nome) fd.append('ajudante_nome',form.ajudante_nome);
+      if(form.tipo_frota) fd.append('tipo_frota',form.tipo_frota);
+      if(form.quant_entregas) fd.append('quant_entregas',form.quant_entregas);
+      if(form.ajudante_extra) fd.append('ajudante_extra',form.ajudante_extra);
       if(form.regiao) fd.append('regiao',form.regiao);
       if(form.tipo) fd.append('tipo',form.tipo);
       if(form.pedido) fd.append('pedido',form.pedido);
@@ -299,6 +305,9 @@ export default function Ordens() {
         remessa: ordemExistente.remessa || '',
         ajuda_diesel: ordemExistente.ajuda_diesel || '',
         taxa_descarga: ordemExistente.taxa_descarga || '',
+        ajudante_extra: ordemExistente.ajudante_extra || '',
+        tipo_frota: ordemExistente.tipo_frota || '',
+        quant_entregas: ordemExistente.quant_entregas || '',
         obs: ordemExistente.obs || '',
         status: ordemExistente.status || 'pendente',
         km_saida: ordemExistente.km_saida || '',
@@ -614,8 +623,25 @@ export default function Ordens() {
                     options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
                 </Field>
 
+                {/* Tipo de Frota - define visibilidade dos KMs */}
+                <div className="form-grid cols-2">
+                  <Field label={<span>Tipo de Frota <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
+                    <Select value={form.tipo_frota||''} onChange={e=>set('tipo_frota',e.target.value)}
+                      options={[
+                        {value:'proprio',label:'🏠 Próprio'},
+                        {value:'agregado',label:'🚛 Agregado'},
+                        {value:'terceiro',label:'🚚 Terceiro'},
+                      ]} />
+                  </Field>
+                  <Field label="Quant. Entregas (estimativa)">
+                    <Input type="number" min="0" value={form.quant_entregas||''}
+                      onChange={e=>set('quant_entregas',e.target.value)}
+                      placeholder="Ex: 35 (atualizado pela importação)" />
+                  </Field>
+                </div>
+
                 {/* Ajudante - full width */}
-                <Field label="Ajudante">
+                <Field label="Ajudante (nome)">
                   <Input
                     value={form.ajudante_nome||''}
                     onChange={e=>set('ajudante_nome',e.target.value)}
@@ -659,14 +685,18 @@ export default function Ordens() {
 
               {/* Campos configuráveis */}
               <div className="form-grid cols-2" style={{marginBottom:14}}>
-                {/* Controle de KM */}
-                <Field label="KM Saída">
-                  <Input type="number" step="0.1" value={form.km_saida||''} onChange={e=>set('km_saida',e.target.value)} placeholder="Hodômetro saída" />
-                </Field>
-                <Field label="KM Chegada">
-                  <Input type="number" step="0.1" value={form.km_chegada||''} onChange={e=>set('km_chegada',e.target.value)} placeholder="Hodômetro chegada" />
-                </Field>
-                {form.km_saida && form.km_chegada && Number(form.km_chegada) > Number(form.km_saida) && (
+                {/* Controle de KM - só pra frota própria */}
+                {form.tipo_frota === 'proprio' && (
+                  <>
+                    <Field label="KM Saída">
+                      <Input type="number" step="0.1" value={form.km_saida||''} onChange={e=>set('km_saida',e.target.value)} placeholder="Hodômetro saída" />
+                    </Field>
+                    <Field label="KM Chegada">
+                      <Input type="number" step="0.1" value={form.km_chegada||''} onChange={e=>set('km_chegada',e.target.value)} placeholder="Hodômetro chegada" />
+                    </Field>
+                  </>
+                )}
+                {form.tipo_frota === 'proprio' && form.km_saida && form.km_chegada && Number(form.km_chegada) > Number(form.km_saida) && (
                   <div style={{gridColumn:'span 2',padding:'6px 12px',background:'var(--accent-lt)',borderRadius:'var(--radius)',fontSize:12,color:'var(--accent)'}}>
                     Distância percorrida: <strong>{(Number(form.km_chegada) - Number(form.km_saida)).toFixed(1)} km</strong>
                   </div>
@@ -686,14 +716,19 @@ export default function Ordens() {
                     <Input value={form.remessa||''} onChange={e=>set('remessa',e.target.value)} />
                   </FL>
                 )}
-                {visivel('ajuda_diesel') && (
+                {visivel('ajuda_diesel') && !isMotorista && (
                   <FL label="Ajuda Diesel (R$)" obrig={obrigatorio('ajuda_diesel')}>
                     <Input type="number" step="0.01" min="0" value={form.ajuda_diesel||''} onChange={e=>set('ajuda_diesel',e.target.value)} placeholder="0,00" />
                   </FL>
                 )}
-                {visivel('taxa_descarga') && (
+                {visivel('taxa_descarga') && !isMotorista && (
                   <FL label="Taxa Descarga (R$)" obrig={obrigatorio('taxa_descarga')}>
                     <Input type="number" step="0.01" min="0" value={form.taxa_descarga||''} onChange={e=>set('taxa_descarga',e.target.value)} placeholder="0,00" />
+                  </FL>
+                )}
+                {!isMotorista && (
+                  <FL label="Ajudante Extra (R$)">
+                    <Input type="number" step="0.01" min="0" value={form.ajudante_extra||''} onChange={e=>set('ajudante_extra',e.target.value)} placeholder="0,00" />
                   </FL>
                 )}
                 {visivel('obs') && (

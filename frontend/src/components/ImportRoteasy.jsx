@@ -3,16 +3,17 @@ import { api } from '../lib/api';
 import { Field, Input } from './UI';
 
 /**
- * Importa relatório de serviços do Roteasy para Ordens de Transporte.
+ * Importa relatório de serviços do Roteasy → preenche paradas das OTs já criadas.
  *
- * Fluxo: upload → parse cliente-side → preview do servidor (lookups) → confirmar.
- * Backend faz UPSERT por remessa, auto-cria clientes e gera CAP/CAR consolidado por rota.
+ * Fluxo: upload .xlsx → parse cliente-side → preview (match com OTs) → confirmar.
+ * Backend só importa rotas que já têm OT cadastrada para a data (match por numero_rota).
+ * Rotas sem OT correspondente são ignoradas.
  */
 export default function ImportRoteasy({ open, onClose, onSuccess }) {
-  const [etapa, setEtapa] = useState('upload'); // upload | preview | enviando | resultado
+  const [etapa, setEtapa] = useState('upload');
   const [arquivo, setArquivo] = useState(null);
   const [dataRota, setDataRota] = useState('');
-  const [parsedRotas, setParsedRotas] = useState(null); // estrutura JSON pronta para backend
+  const [parsedRotas, setParsedRotas] = useState(null);
   const [preview, setPreview] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState('');
@@ -36,27 +37,21 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
     onClose?.();
   }
 
-  // ── Parser do Roteasy ────────────────────────────────────
-  // Lê o arquivo .xlsx, transforma em estrutura { data, rotas: [{ ..., paradas: [...] }] }
+  // ── Parser do Roteasy ──────────────────────────────────────
   async function parseFile(file) {
-    if (!window.XLSX) {
-      throw new Error('Biblioteca XLSX não carregada. Recarregue a página.');
-    }
+    if (!window.XLSX) throw new Error('Biblioteca XLSX não carregada. Recarregue a página.');
     const buffer = await file.arrayBuffer();
     const wb = window.XLSX.read(buffer, { type: 'array', cellDates: false });
 
-    // Tentar a aba "Relatório de Serviços", senão a primeira
     const sheetName = wb.SheetNames.find(n => /servi[çc]o/i.test(n)) || wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
     const linhas = window.XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
 
     if (!linhas.length) throw new Error('Planilha vazia.');
 
-    // Detectar coluna de data (ex: "25/04/2026")
     const primeiraData = linhas.find(l => l['Data da Rota'])?.['Data da Rota'];
     const dataDetectada = converterDataBR(primeiraData);
 
-    // Agrupar por rota (campo "Nome" do Roteasy)
     const mapaRotas = new Map();
     for (const l of linhas) {
       const evento = String(l['Evento'] || '').toLowerCase();
@@ -77,7 +72,6 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
       }
       const rota = mapaRotas.get(chave);
 
-      // Linha "Saida" = cabeçalho da rota
       if (evento === 'saida' || evento === 'saída') {
         rota.placa = l['Placa do veículo'] || null;
         rota.operador = l['Operador'] || null;
@@ -86,9 +80,7 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
         continue;
       }
 
-      // Linha "Serviço" = parada
       if (evento === 'serviço' || evento === 'servico') {
-        // Atualiza dados da rota (caso "Saida" venha depois ou não exista)
         if (!rota.placa) rota.placa = l['Placa do veículo'] || null;
         if (!rota.operador) rota.operador = l['Operador'] || null;
         if (!rota.transportadora) rota.transportadora = l['Transportadora'] || null;
@@ -105,7 +97,10 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
           pedido: l['Número Pedido'] != null ? String(l['Número Pedido']) : null,
           remessa: l['Número da remessa'] != null ? String(l['Número da remessa']) : null,
           nf: l['Número NF'] != null ? String(l['Número NF']) : null,
-          obs: [l['Observações'], l['Informação Adicional 1']].filter(Boolean).join(' | ') || null,
+          latitude: l['Latitude'] != null ? Number(l['Latitude']) : null,
+          longitude: l['Longitude'] != null ? Number(l['Longitude']) : null,
+          obs: [l['Observações'], l['Informação Adicional 1'], l['Informação Adicional 2']]
+            .filter(Boolean).join(' | ') || null,
         });
       }
     }
@@ -117,7 +112,6 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
   }
 
   function converterDataBR(s) {
-    // "25/04/2026" → "2026-04-25"
     if (!s) return '';
     const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (!m) return '';
@@ -159,7 +153,7 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
     setEtapa('enviando');
     setErro('');
     try {
-      const payload = { data: dataRota, rotas: parsedRotas.rotas, origem: 'roteasy' };
+      const payload = { data: dataRota, rotas: parsedRotas.rotas };
       const data = await api.post('/ordens/importar', payload);
       setResultado(data);
       setEtapa('resultado');
@@ -170,17 +164,15 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
     }
   }
 
-  // ── UI ─────────────────────────────────────────────────────
   return (
     <div className="modal-backdrop" onClick={fechar}>
       <div className="modal" style={{ maxWidth: 920 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>📥 Importar Planilha Roteasy</h2>
+          <h2 style={{ margin: 0, fontSize: 18 }}>📥 Importar Planilha Roteasy</h2>
           <button className="modal-close" onClick={fechar}>×</button>
         </div>
 
         <div className="modal-body">
-          {/* Stepper */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, fontSize: 12 }}>
             <Step ativo={etapa === 'upload'} concluido={etapa !== 'upload'}>1. Upload</Step>
             <Step ativo={etapa === 'preview'} concluido={etapa === 'enviando' || etapa === 'resultado'}>2. Pré-visualização</Step>
@@ -188,10 +180,8 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
           </div>
 
           {erro && (
-            <div style={{
-              background: '#fee', border: '1px solid #fcc', color: '#900',
-              padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13
-            }}>
+            <div style={{ background: '#fee', border: '1px solid #fcc', color: '#900',
+              padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 }}>
               ⚠️ {erro}
             </div>
           )}
@@ -199,27 +189,22 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
           {/* ETAPA 1: Upload */}
           {etapa === 'upload' && (
             <div>
-              <p style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 12 }}>
-                Faça upload do <strong>Relatório de Serviços</strong> exportado do Roteasy (.xlsx).
-                O sistema irá agrupar as entregas por rota e gerar OTs com Romaneio automaticamente.
-              </p>
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: 10,
+                borderRadius: 6, marginBottom: 12, fontSize: 13 }}>
+                <strong>⚠️ Importante:</strong> a importação só preenche paradas em OTs já cadastradas.
+                Crie as OTs do dia (uma por rota) <strong>antes</strong> de importar a planilha.
+                Rotas da planilha sem OT correspondente serão ignoradas.
+              </div>
 
-              <Field label="Arquivo (.xlsx)">
-                <input
-                  type="file"
-                  ref={inputRef}
-                  accept=".xlsx,.xlsm,.xls"
-                  onChange={handleFile}
-                  style={{ width: '100%', padding: 8 }}
-                />
+              <Field label="Arquivo (.xlsx do Roteasy)">
+                <input type="file" ref={inputRef} accept=".xlsx,.xlsm,.xls"
+                  onChange={handleFile} style={{ width: '100%', padding: 8 }} />
               </Field>
 
               {parsedRotas && (
                 <>
-                  <div style={{
-                    background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6,
-                    padding: 12, marginTop: 12, fontSize: 13
-                  }}>
+                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd',
+                    borderRadius: 6, padding: 12, marginTop: 12, fontSize: 13 }}>
                     ✅ Planilha lida com sucesso:
                     <ul style={{ margin: '6px 0 0 18px' }}>
                       <li><strong>{parsedRotas.rotas.length}</strong> rotas detectadas</li>
@@ -235,11 +220,8 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
                 <button className="btn btn-ghost" onClick={fechar}>Cancelar</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={gerarPreview}
-                  disabled={!parsedRotas || !dataRota}
-                >
+                <button className="btn btn-primary" onClick={gerarPreview}
+                  disabled={!parsedRotas || !dataRota}>
                   Pré-visualizar →
                 </button>
               </div>
@@ -251,74 +233,51 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
             <div>
               <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
                 <Stat label="Data" valor={fmtDataBR(preview.data)} />
-                <Stat label="Rotas" valor={preview.total_rotas} />
-                <Stat label="Entregas" valor={preview.total_paradas} />
-                <Stat
-                  label="Alertas"
-                  valor={preview.alertas?.length || 0}
-                  cor={preview.alertas?.length ? '#f59e0b' : null}
-                />
+                <Stat label="Rotas na planilha" valor={preview.total_rotas_planilha} />
+                <Stat label="✓ Match" valor={preview.total_rotas_match} cor="#16a34a" />
+                <Stat label="✗ Sem OT" valor={preview.total_rotas_sem_ot}
+                  cor={preview.total_rotas_sem_ot ? '#dc2626' : null} />
+                <Stat label="Paradas a importar" valor={preview.total_paradas_match} />
               </div>
 
-              {preview.alertas?.length > 0 && (
-                <div style={{
-                  background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6,
-                  padding: 12, marginBottom: 12, fontSize: 13
-                }}>
-                  <strong>⚠️ {preview.alertas.length} item(s) sem cadastro</strong>
-                  <ul style={{ margin: '6px 0 0 18px', maxHeight: 100, overflow: 'auto' }}>
-                    {preview.alertas.slice(0, 20).map((a, i) => (
-                      <li key={i}>
-                        Rota {a.rota}: {a.tipo === 'veiculo_nao_encontrado' ? 'Veículo' : 'Motorista'}
-                        {' '}<code>{a.valor}</code> não cadastrado
-                      </li>
-                    ))}
-                    {preview.alertas.length > 20 && <li>... e mais {preview.alertas.length - 20}</li>}
-                  </ul>
-                  <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12, color: '#92400e' }}>
-                    A importação prosseguirá deixando esses campos vazios. Você pode editá-los depois nas OTs.
+              {preview.total_rotas_sem_ot > 0 && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca',
+                  borderRadius: 6, padding: 12, marginBottom: 12, fontSize: 13 }}>
+                  <strong>⚠️ {preview.total_rotas_sem_ot} rota(s) sem OT cadastrada serão IGNORADAS.</strong>
+                  <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#991b1b' }}>
+                    Cadastre as OTs antes de importar, ou estas entregas não entrarão no sistema.
                   </p>
                 </div>
               )}
 
-              <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+              <div style={{ maxHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
                 <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                   <thead style={{ background: 'var(--bg2)', position: 'sticky', top: 0 }}>
                     <tr>
+                      <th style={th}>Status</th>
                       <th style={th}>Rota</th>
-                      <th style={th}>Veículo</th>
-                      <th style={th}>Motorista</th>
-                      <th style={th}>Transportadora</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Paradas</th>
+                      <th style={th}>Tipo Frota</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Paradas atuais</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Paradas planilha</th>
                       <th style={{ ...th, textAlign: 'right' }}>Peso (kg)</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Novas / Atualiz.</th>
                     </tr>
                   </thead>
                   <tbody>
                     {preview.rotas.map((r, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                      <tr key={i} style={{ borderTop: '1px solid var(--border)',
+                        background: r.status === 'sem_ot' ? '#fef2f2' : 'transparent' }}>
+                        <td style={td}>
+                          {r.status === 'match'
+                            ? <span style={{ color: '#16a34a', fontWeight: 600 }}>✓ Match</span>
+                            : <span style={{ color: '#dc2626', fontWeight: 600 }}>✗ Sem OT</span>}
+                        </td>
                         <td style={td}><strong>{r.numero_rota}</strong></td>
-                        <td style={td}>
-                          {r.veiculo_id
-                            ? <span>{r.placa} <small style={{ color: 'var(--text3)' }}>({r.veiculo_tipo})</small></span>
-                            : <span style={{ color: '#dc2626' }}>{r.placa || '—'} ⚠️</span>
-                          }
+                        <td style={td}>{r.tipo_frota || '—'}</td>
+                        <td style={{ ...td, textAlign: 'right', color: 'var(--text3)' }}>
+                          {r.paradas_atual ?? '—'}
                         </td>
-                        <td style={td}>
-                          {r.motorista_id
-                            ? r.motorista_nome
-                            : <span style={{ color: '#dc2626' }}>{r.operador || '—'} ⚠️</span>
-                          }
-                        </td>
-                        <td style={td}>{r.transportadora_nome || '—'}</td>
-                        <td style={{ ...td, textAlign: 'right' }}>{r.total_paradas}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>{r.paradas_planilha}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{r.peso_total.toFixed(1)}</td>
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <span style={{ color: '#16a34a' }}>+{r.remessas_para_criar}</span>
-                          {r.remessas_para_atualizar > 0 && (
-                            <> / <span style={{ color: '#2563eb' }}>↻{r.remessas_para_atualizar}</span></>
-                          )}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -329,8 +288,9 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
                 <button className="btn btn-ghost" onClick={() => setEtapa('upload')}>← Voltar</button>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn-ghost" onClick={fechar}>Cancelar</button>
-                  <button className="btn btn-primary" onClick={confirmarImportacao}>
-                    Confirmar e Importar
+                  <button className="btn btn-primary" onClick={confirmarImportacao}
+                    disabled={preview.total_rotas_match === 0}>
+                    Confirmar e Importar ({preview.total_rotas_match} rotas)
                   </button>
                 </div>
               </div>
@@ -340,9 +300,9 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
           {/* ETAPA 3: Enviando */}
           {etapa === 'enviando' && (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{ fontSize: 18, marginBottom: 8 }}>⏳ Importando ordens...</div>
+              <div style={{ fontSize: 18, marginBottom: 8 }}>⏳ Importando paradas...</div>
               <div style={{ fontSize: 13, color: 'var(--text3)' }}>
-                Isso pode levar alguns segundos para planilhas grandes.
+                Pode levar alguns segundos para planilhas grandes.
               </div>
             </div>
           )}
@@ -350,17 +310,14 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
           {/* ETAPA 4: Resultado */}
           {etapa === 'resultado' && resultado && (
             <div>
-              <div style={{
-                background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6,
-                padding: 16, marginBottom: 12
-              }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac',
+                borderRadius: 6, padding: 16, marginBottom: 12 }}>
                 <h3 style={{ margin: '0 0 8px 0', color: '#15803d' }}>✅ Importação concluída</h3>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-                  <li><strong>{resultado.criadas}</strong> ordens novas criadas</li>
-                  <li><strong>{resultado.atualizadas}</strong> ordens atualizadas (UPSERT por remessa)</li>
-                  <li><strong>{resultado.rotas_processadas}</strong> rotas processadas</li>
-                  <li><strong>{resultado.cap_gerados}</strong> contas a pagar geradas</li>
-                  <li><strong>{resultado.car_gerados}</strong> contas a receber geradas</li>
+                  <li><strong>{resultado.rotas_importadas}</strong> rota(s) importada(s)</li>
+                  <li><strong>{resultado.rotas_ignoradas}</strong> rota(s) ignorada(s) (sem OT)</li>
+                  <li><strong>{resultado.paradas_criadas}</strong> parada(s) criada(s)</li>
+                  <li><strong>{resultado.paradas_atualizadas}</strong> parada(s) atualizada(s)</li>
                 </ul>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -374,17 +331,13 @@ export default function ImportRoteasy({ open, onClose, onSuccess }) {
   );
 }
 
-// ── Subcomponentes ─────────────────────────────────────────
 function Step({ ativo, concluido, children }) {
   return (
     <div style={{
-      flex: 1,
-      padding: '6px 12px',
-      borderRadius: 4,
+      flex: 1, padding: '6px 12px', borderRadius: 4,
       background: concluido ? '#16a34a' : ativo ? '#2563eb' : 'var(--bg2)',
       color: (concluido || ativo) ? '#fff' : 'var(--text2)',
-      textAlign: 'center',
-      fontWeight: ativo ? 600 : 400,
+      textAlign: 'center', fontWeight: ativo ? 600 : 400,
     }}>
       {concluido && '✓ '}{children}
     </div>
@@ -394,11 +347,8 @@ function Step({ ativo, concluido, children }) {
 function Stat({ label, valor, cor }) {
   return (
     <div style={{
-      flex: '1 1 120px',
-      background: 'var(--bg2)',
-      padding: 10,
-      borderRadius: 6,
-      border: '1px solid var(--border)'
+      flex: '1 1 110px', background: 'var(--bg2)', padding: 10,
+      borderRadius: 6, border: '1px solid var(--border)'
     }}>
       <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 600, color: cor || 'var(--text)' }}>{valor}</div>

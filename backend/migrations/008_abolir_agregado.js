@@ -18,10 +18,34 @@ async function run() {
 
     // ── 1. logi_veiculos.ag_ft: 'agregado' → 'terceiro' ──
     append('--- 1. logi_veiculos.ag_ft ---');
+    // Dropar constraint antiga (que só permitia frota/agregado)
+    await client.query(`
+      DO $$
+      DECLARE
+        c RECORD;
+      BEGIN
+        FOR c IN
+          SELECT conname FROM pg_constraint
+          WHERE conrelid = 'logi_veiculos'::regclass
+            AND contype = 'c'
+            AND conname LIKE '%ag_ft%'
+        LOOP
+          EXECUTE format('ALTER TABLE logi_veiculos DROP CONSTRAINT %I', c.conname);
+        END LOOP;
+      END $$;
+    `);
+    append('  ✓ constraint antiga removida (se existia)');
     const r1 = await client.query(
       `UPDATE logi_veiculos SET ag_ft='terceiro' WHERE ag_ft='agregado'`
     );
     append(`  ✓ ${r1.rowCount} veículos atualizados (agregado → terceiro)`);
+    // Recriar constraint com novos valores
+    await client.query(`
+      ALTER TABLE logi_veiculos
+        ADD CONSTRAINT logi_veiculos_ag_ft_check
+        CHECK (ag_ft IS NULL OR ag_ft IN ('frota','terceiro'))
+    `);
+    append('  ✓ nova constraint criada (frota|terceiro)');
 
     // ── 2. logi_motoristas.tipo_colaborador: 'motorista_agregado' → 'motorista_terceiro' ──
     append('\n--- 2. logi_motoristas.tipo_colaborador ---');
@@ -41,6 +65,22 @@ async function run() {
 
     // ── 4. logi_ordens_transporte.tipo_frota: 'agregado' → 'terceiro' ──
     append('\n--- 4. logi_ordens_transporte.tipo_frota ---');
+    // Drop constraint se existir
+    await client.query(`
+      DO $$
+      DECLARE
+        c RECORD;
+      BEGIN
+        FOR c IN
+          SELECT conname FROM pg_constraint
+          WHERE conrelid = 'logi_ordens_transporte'::regclass
+            AND contype = 'c'
+            AND conname LIKE '%tipo_frota%'
+        LOOP
+          EXECUTE format('ALTER TABLE logi_ordens_transporte DROP CONSTRAINT %I', c.conname);
+        END LOOP;
+      END $$;
+    `);
     const r4 = await client.query(
       `UPDATE logi_ordens_transporte SET tipo_frota='terceiro'
        WHERE tipo_frota='agregado'`

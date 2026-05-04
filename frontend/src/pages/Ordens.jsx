@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { useParametros } from '../hooks/useParametros';
-import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { StatusBadge, Field, Input, Select, useToast, Toast, ExportBtn } from '../components/UI';
 import ImportRoteasy from '../components/ImportRoteasy';
+import PreCadastroModal from '../components/PreCadastroModal';
 
 const STATUS_OPTS = [
   {value:'pendente',label:'Pendente'},
@@ -149,8 +149,6 @@ export default function Ordens() {
   const [freteLoading, setFreteLoading] = useState(false);
   const { toast, showToast } = useToast();
   const { visivel, obrigatorio, params: parametros } = useParametros();
-  const { user } = useAuth();
-  const isMotorista = user?.perfil === 'motorista';
 
   const qs = new URLSearchParams();
   if (filtInicio) qs.set('data_inicio', filtInicio);
@@ -158,10 +156,10 @@ export default function Ordens() {
   if (filtStatus) qs.set('status', filtStatus);
 
   const { data, loading, refetch }   = useFetch(`/ordens?${qs}`, [filtInicio, filtFim, filtStatus]);
-  const { data: clientes }           = useFetch('/clientes');
-  const { data: motoristas }         = useFetch('/motoristas');
-  const { data: veiculos }           = useFetch('/veiculos');
-  const { data: regioes }            = useFetch('/financeiro/fretes/regioes');
+  const { data: clientes }                            = useFetch('/clientes');
+  const { data: motoristas, refetch: refetchMot }     = useFetch('/motoristas');
+  const { data: veiculos,   refetch: refetchVei }     = useFetch('/veiculos');
+  const { data: regioes }                             = useFetch('/financeiro/fretes/regioes');
 
   // Veículo selecionado
   const veiculoSelecionado = useMemo(
@@ -207,14 +205,11 @@ export default function Ordens() {
   const validate = () => {
     const erros = [];
     if (!form.data) erros.push('Data');
+    if (!form.tipo_frota) erros.push('Tipo de Frota');
     if (!form.cliente_id) erros.push('Cliente');
     if (!form.motorista_id) erros.push('Motorista');
     if (!form.veiculo_id) erros.push('Veículo');
-    if (visivel('numero_rota') && obrigatorio('numero_rota') && !form.numero_rota) erros.push('Número da Rota');
-    if (visivel('seq') && obrigatorio('seq') && !form.seq) erros.push('Sequência');
-    if (visivel('nf') && obrigatorio('nf') && !form.nf) erros.push('NF');
-    if (visivel('peso') && obrigatorio('peso') && !form.peso) erros.push('Peso');
-    if (visivel('remessa') && obrigatorio('remessa') && !form.remessa) erros.push('Remessa');
+    if (!form.numero_rota) erros.push('Número da Rota');
     if (visivel('ajuda_diesel') && obrigatorio('ajuda_diesel') && !form.ajuda_diesel) erros.push('Ajuda Diesel');
     if (visivel('taxa_descarga') && obrigatorio('taxa_descarga') && !form.taxa_descarga) erros.push('Taxa Descarga');
     if (visivel('obs') && obrigatorio('obs') && !form.obs) erros.push('Observações');
@@ -229,32 +224,32 @@ export default function Ordens() {
     try {
       const fd = new FormData();
       fd.append('data', form.data);
-      if(visivel('numero_rota')) fd.append('numero_rota', form.numero_rota||'');
-      if(visivel('seq')) fd.append('seq', form.seq||1);
-      if(form.cliente_id) fd.append('cliente_id',form.cliente_id);
-      if(form.cliente_nome) fd.append('cliente_nome',form.cliente_nome);
-      if(form.motorista_id) fd.append('motorista_id',form.motorista_id);
-      if(form.veiculo_id) fd.append('veiculo_id',form.veiculo_id);
-      if(form.ajudante_nome) fd.append('ajudante_nome',form.ajudante_nome);
-      if(form.tipo_frota) fd.append('tipo_frota',form.tipo_frota);
-      if(form.quant_entregas) fd.append('quant_entregas',form.quant_entregas);
-      if(form.ajudante_extra) fd.append('ajudante_extra',form.ajudante_extra);
-      if(form.regiao) fd.append('regiao',form.regiao);
-      if(form.tipo) fd.append('tipo',form.tipo);
-      if(form.pedido) fd.append('pedido',form.pedido);
-      if(visivel('nf') && form.nf) fd.append('nf',form.nf);
-      if(visivel('peso') && form.peso) fd.append('peso',form.peso);
-      if(visivel('remessa') && form.remessa) fd.append('remessa',form.remessa);
-      if(visivel('obs') && form.obs) fd.append('obs',form.obs);
-      fd.append('ajuda_diesel', visivel('ajuda_diesel') ? (form.ajuda_diesel||0) : 0);
-      fd.append('taxa_descarga', visivel('taxa_descarga') ? (form.taxa_descarga||0) : 0);
-      if (form.km_saida) fd.append('km_saida', form.km_saida);
-      if (form.km_chegada) fd.append('km_chegada', form.km_chegada);
+      fd.append('tipo_frota', form.tipo_frota);
+      if(form.numero_rota) fd.append('numero_rota', form.numero_rota);
+      if(form.quant_entregas) fd.append('quant_entregas', form.quant_entregas);
+      if(form.cliente_id) fd.append('cliente_id', form.cliente_id);
+      if(form.cliente_nome) fd.append('cliente_nome', form.cliente_nome);
+      if(form.motorista_id) fd.append('motorista_id', form.motorista_id);
+      if(form.veiculo_id) fd.append('veiculo_id', form.veiculo_id);
+      if(form.regiao) fd.append('regiao', form.regiao);
+      if(form.tipo) fd.append('tipo', form.tipo);
+      if(visivel('obs') && form.obs) fd.append('obs', form.obs);
+      // Valores monetários só pra não-motorista
+      if (!ehMotorista) {
+        fd.append('ajuda_diesel', visivel('ajuda_diesel') ? (form.ajuda_diesel||0) : 0);
+        fd.append('taxa_descarga', visivel('taxa_descarga') ? (form.taxa_descarga||0) : 0);
+        fd.append('ajudante_extra', form.ajudante_extra || 0);
+      }
+      // KM apenas para tipo_frota=proprio
+      if (form.tipo_frota === 'proprio') {
+        if (form.km_saida) fd.append('km_saida', form.km_saida);
+        if (form.km_chegada) fd.append('km_chegada', form.km_chegada);
+      }
       fd.append('status', form.status||'pendente');
-      if(visivel('anexo') && anexo) fd.append('anexo',anexo);
+      if(visivel('anexo') && anexo) fd.append('anexo', anexo);
 
-      // Passa o ID da tarifa agregado se encontrou
-      if (freteData?.pagar?.id) fd.append('tabela_frete_id', freteData.pagar.id);
+      // Paradas inline (sempre que houver)
+      if (paradas.length) fd.append('paradas', JSON.stringify(paradas));
 
       const token = localStorage.getItem('logi_token');
       const url = editingId
@@ -283,39 +278,54 @@ export default function Ordens() {
   const [agrupModal, setAgrupModal] = useState(false);
   const [agrupForm, setAgrupForm] = useState({});
   const [showImportRoteasy, setShowImportRoteasy] = useState(false);
+  // ── Estados novos: paradas, pré-cadastro, perfil ──
+  const [paradas, setParadas] = useState([]);
+  const [showPreMot, setShowPreMot] = useState(false);
+  const [showPreVei, setShowPreVei] = useState(false);
+  const { data: transportadoras } = useFetch('/transportadoras');
+  // Perfil do usuário (para esconder valores monetários se for motorista)
+  const userPerfil = (() => {
+    try {
+      const t = localStorage.getItem('logi_token');
+      if (!t) return null;
+      const p = JSON.parse(atob(t.split('.')[1]));
+      return p.perfil || null;
+    } catch { return null; }
+  })();
+  const ehMotorista = userPerfil === 'motorista';
 
-  const openModal = (ordemExistente = null) => {
+  const openModal = async (ordemExistente = null) => {
     if (ordemExistente) {
       // Edição
       setEditingId(ordemExistente.id);
       setForm({
         data: ordemExistente.data?.substring(0,10) || today,
         numero_rota: ordemExistente.numero_rota || '',
-        seq: ordemExistente.seq || 1,
+        tipo_frota: ordemExistente.tipo_frota || '',
+        quant_entregas: ordemExistente.quant_entregas || '',
         cliente_id: ordemExistente.cliente_id || '',
         cliente_nome: ordemExistente.cliente_nome || '',
         motorista_id: ordemExistente.motorista_id || '',
-        ajudante_nome: ordemExistente.ajudante_nome || '',
         veiculo_id: ordemExistente.veiculo_id || '',
         regiao: ordemExistente.regiao || '',
         tipo: ordemExistente.tipo || '',
-        pedido: ordemExistente.pedido || '',
-        nf: ordemExistente.nf || '',
-        peso: ordemExistente.peso || '',
-        remessa: ordemExistente.remessa || '',
         ajuda_diesel: ordemExistente.ajuda_diesel || '',
         taxa_descarga: ordemExistente.taxa_descarga || '',
         ajudante_extra: ordemExistente.ajudante_extra || '',
-        tipo_frota: ordemExistente.tipo_frota || '',
-        quant_entregas: ordemExistente.quant_entregas || '',
         obs: ordemExistente.obs || '',
         status: ordemExistente.status || 'pendente',
         km_saida: ordemExistente.km_saida || '',
         km_chegada: ordemExistente.km_chegada || '',
       });
+      // Carregar paradas da OT
+      try {
+        const ps = await api.get(`/ordens/${ordemExistente.id}/paradas`);
+        setParadas(ps || []);
+      } catch { setParadas([]); }
     } else {
       setEditingId(null);
-      setForm({ data: today });
+      setForm({ data: today, tipo_frota: '' });
+      setParadas([]);
     }
     setAnexo(null);
     setFormError('');
@@ -329,6 +339,7 @@ export default function Ordens() {
     setForm({ data: today });
     setAnexo(null);
     setFreteData(null);
+    setParadas([]);
   };
 
   // ── Agrupamento de romaneios ──
@@ -585,27 +596,38 @@ export default function Ordens() {
                 </div>
               )}
 
-              {/* Linha 1: Data + Rota + Seq */}
+              {/* Linha 0: Tipo de Frota (define visibilidade) */}
+              <div style={{display:'flex',gap:8,marginBottom:14}}>
+                <div style={{flex:1}}>
+                  <Field label={<span>Tipo de Frota <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
+                    <Select value={form.tipo_frota||''} onChange={e=>set('tipo_frota',e.target.value)}
+                      options={[
+                        {value:'',label:'Selecione...'},
+                        {value:'proprio',label:'🏠 Próprio'},
+                        {value:'agregado',label:'🚛 Agregado'},
+                        {value:'terceiro',label:'🚚 Terceiro'},
+                      ]} />
+                  </Field>
+                </div>
+              </div>
+
+              {/* Linha 1: Data + Rota + Quant. Entregas */}
               <div style={{display:'flex',gap:8,marginBottom:14,alignItems:'flex-end'}}>
                 <div style={{width:150,flexShrink:0}}>
                   <Field label={<span>Data <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
                     <Input type="date" value={form.data||today} onChange={e=>set('data',e.target.value)} />
                   </Field>
                 </div>
-                {visivel('numero_rota') && (
-                  <div style={{flex:1,minWidth:0}}>
-                    <FL label="Rota" obrig={obrigatorio('numero_rota')}>
-                      <Input type="number" value={form.numero_rota||''} onChange={e=>set('numero_rota',e.target.value)} placeholder="4800" />
-                    </FL>
-                  </div>
-                )}
-                {visivel('seq') && (
-                  <div style={{width:56,flexShrink:0}}>
-                    <FL label="Seq." obrig={obrigatorio('seq')}>
-                      <Input type="number" value={form.seq||1} onChange={e=>set('seq',e.target.value)} min={1} />
-                    </FL>
-                  </div>
-                )}
+                <div style={{flex:1,minWidth:0}}>
+                  <FL label="Rota" obrig={true}>
+                    <Input type="number" value={form.numero_rota||''} onChange={e=>set('numero_rota',e.target.value)} placeholder="4800" />
+                  </FL>
+                </div>
+                <div style={{width:120,flexShrink:0}}>
+                  <Field label="Quant. Entregas">
+                    <Input type="number" value={form.quant_entregas||''} onChange={e=>set('quant_entregas',e.target.value)} min={0} placeholder="0" />
+                  </Field>
+                </div>
               </div>
 
               {/* Linha 2: Cliente, Motorista, Veículo, Região */}
@@ -617,42 +639,44 @@ export default function Ordens() {
                   </Select>
                 </Field>
 
-                {/* Motorista - full width para caber o nome */}
+                {/* Motorista - com botão + Novo */}
                 <Field label={<span>Motorista <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                  <Select value={form.motorista_id||''} onChange={e=>onMotoristaChange(e.target.value)}
-                    options={(motoristas||[]).map(m=>({value:m.id,label:m.nome}))} />
+                  <div style={{display:'flex',gap:6}}>
+                    <div style={{flex:1}}>
+                      <Select value={form.motorista_id||''} onChange={e=>onMotoristaChange(e.target.value)}
+                        options={(motoristas||[]).map(m=>({value:m.id,label:m.nome+(m.status_cadastro==='pendente_admin'?' ⚠️':'')}))} />
+                    </div>
+                    <button type="button" className="btn btn-ghost" onClick={()=>setShowPreMot(true)}
+                      style={{padding:'6px 12px',whiteSpace:'nowrap'}} title="Pré-cadastro rápido">
+                      + Novo
+                    </button>
+                  </div>
                 </Field>
 
-                {/* Tipo de Frota - define visibilidade dos KMs */}
-                <div className="form-grid cols-2">
-                  <Field label={<span>Tipo de Frota <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                    <Select value={form.tipo_frota||''} onChange={e=>set('tipo_frota',e.target.value)}
-                      options={[
-                        {value:'proprio',label:'🏠 Próprio'},
-                        {value:'agregado',label:'🚛 Agregado'},
-                        {value:'terceiro',label:'🚚 Terceiro'},
-                      ]} />
+                {/* Ajudante Extra (R$) — só admin/operador */}
+                {!ehMotorista && (
+                  <Field label="Ajudante Extra (R$)">
+                    <Input
+                      type="number" step="0.01" min="0"
+                      value={form.ajudante_extra||''}
+                      onChange={e=>set('ajudante_extra',e.target.value)}
+                      placeholder="0,00 (opcional)"
+                    />
                   </Field>
-                  <Field label="Quant. Entregas (estimativa)">
-                    <Input type="number" min="0" value={form.quant_entregas||''}
-                      onChange={e=>set('quant_entregas',e.target.value)}
-                      placeholder="Ex: 35 (atualizado pela importação)" />
-                  </Field>
-                </div>
+                )}
 
-                {/* Ajudante - full width */}
-                <Field label="Ajudante (nome)">
-                  <Input
-                    value={form.ajudante_nome||''}
-                    onChange={e=>set('ajudante_nome',e.target.value)}
-                    placeholder="Nome do ajudante (opcional)"
-                  />
-                </Field>
-
-                {/* Veículo - full width para caber placa + tipo + ag/ft */}
+                {/* Veículo - com botão + Novo */}
                 <Field label={<span>Veículo <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                  <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
-                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚛 Agregado'}`}))} />
+                  <div style={{display:'flex',gap:6}}>
+                    <div style={{flex:1}}>
+                      <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
+                        options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚛 Agregado'}${v.status_cadastro==='pendente_admin'?' ⚠️':''}`}))} />
+                    </div>
+                    <button type="button" className="btn btn-ghost" onClick={()=>setShowPreVei(true)}
+                      style={{padding:'6px 12px',whiteSpace:'nowrap'}} title="Pré-cadastro rápido">
+                      + Novo
+                    </button>
+                  </div>
                 </Field>
 
                 {/* Região - full width */}
@@ -661,31 +685,28 @@ export default function Ordens() {
                     options={(regioes||[]).map(r=>({value:r,label:r}))} />
                 </Field>
 
-                {/* Tipo + Pedido - 2 colunas no desktop, 1 no mobile */}
-                <div className="form-grid cols-2">
-                  <Field label="Tipo">
-                    <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
-                      options={['SOROCABA','INTEIRO','CORTE','AGREGADO'].map(v=>({value:v,label:v}))} />
-                  </Field>
-                  <Field label="Pedido">
-                    <Input value={form.pedido||''} onChange={e=>set('pedido',e.target.value)} />
-                  </Field>
-                </div>
+                {/* Tipo */}
+                <Field label="Tipo">
+                  <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
+                    options={[{value:'',label:'—'},...['INTEIRO','CORTE'].map(v=>({value:v,label:v}))]} />
+                </Field>
               </div>
 
-              {/* ════ Card de resumo de frete ════ */}
-              <FreteResumo
-                veiculo={veiculoSelecionado}
-                regiao={form.regiao}
-                freteData={freteData}
-                loading={freteLoading}
-                temAjudante={!!(form.ajudante_nome||'').trim()}
-                valorAjudante={parseFloat(parametros?.valor_ajudante) || 0}
-              />
+              {/* ════ Card de resumo de frete (só pra não-motorista) ════ */}
+              {!ehMotorista && (
+                <FreteResumo
+                  veiculo={veiculoSelecionado}
+                  regiao={form.regiao}
+                  freteData={freteData}
+                  loading={freteLoading}
+                  temAjudante={!!(form.ajudante_extra && parseFloat(form.ajudante_extra) > 0)}
+                  valorAjudante={parseFloat(form.ajudante_extra) || 0}
+                />
+              )}
 
               {/* Campos configuráveis */}
               <div className="form-grid cols-2" style={{marginBottom:14}}>
-                {/* Controle de KM - só pra frota própria */}
+                {/* KM apenas se tipo_frota = proprio */}
                 {form.tipo_frota === 'proprio' && (
                   <>
                     <Field label="KM Saída">
@@ -694,41 +715,22 @@ export default function Ordens() {
                     <Field label="KM Chegada">
                       <Input type="number" step="0.1" value={form.km_chegada||''} onChange={e=>set('km_chegada',e.target.value)} placeholder="Hodômetro chegada" />
                     </Field>
+                    {form.km_saida && form.km_chegada && Number(form.km_chegada) > Number(form.km_saida) && (
+                      <div style={{gridColumn:'span 2',padding:'6px 12px',background:'var(--accent-lt)',borderRadius:'var(--radius)',fontSize:12,color:'var(--accent)'}}>
+                        Distância percorrida: <strong>{(Number(form.km_chegada) - Number(form.km_saida)).toFixed(1)} km</strong>
+                      </div>
+                    )}
                   </>
                 )}
-                {form.tipo_frota === 'proprio' && form.km_saida && form.km_chegada && Number(form.km_chegada) > Number(form.km_saida) && (
-                  <div style={{gridColumn:'span 2',padding:'6px 12px',background:'var(--accent-lt)',borderRadius:'var(--radius)',fontSize:12,color:'var(--accent)'}}>
-                    Distância percorrida: <strong>{(Number(form.km_chegada) - Number(form.km_saida)).toFixed(1)} km</strong>
-                  </div>
-                )}
-                {visivel('nf') && (
-                  <FL label="NF" obrig={obrigatorio('nf')}>
-                    <Input value={form.nf||''} onChange={e=>set('nf',e.target.value)} />
-                  </FL>
-                )}
-                {visivel('peso') && (
-                  <FL label="Peso (kg)" obrig={obrigatorio('peso')}>
-                    <Input type="number" value={form.peso||''} onChange={e=>set('peso',e.target.value)} />
-                  </FL>
-                )}
-                {visivel('remessa') && (
-                  <FL label="Remessa" obrig={obrigatorio('remessa')}>
-                    <Input value={form.remessa||''} onChange={e=>set('remessa',e.target.value)} />
-                  </FL>
-                )}
-                {visivel('ajuda_diesel') && !isMotorista && (
+                {/* Valores monetários só para não-motorista */}
+                {!ehMotorista && visivel('ajuda_diesel') && form.tipo_frota === 'agregado' && (
                   <FL label="Ajuda Diesel (R$)" obrig={obrigatorio('ajuda_diesel')}>
                     <Input type="number" step="0.01" min="0" value={form.ajuda_diesel||''} onChange={e=>set('ajuda_diesel',e.target.value)} placeholder="0,00" />
                   </FL>
                 )}
-                {visivel('taxa_descarga') && !isMotorista && (
+                {!ehMotorista && visivel('taxa_descarga') && (
                   <FL label="Taxa Descarga (R$)" obrig={obrigatorio('taxa_descarga')}>
                     <Input type="number" step="0.01" min="0" value={form.taxa_descarga||''} onChange={e=>set('taxa_descarga',e.target.value)} placeholder="0,00" />
-                  </FL>
-                )}
-                {!isMotorista && (
-                  <FL label="Ajudante Extra (R$)">
-                    <Input type="number" step="0.01" min="0" value={form.ajudante_extra||''} onChange={e=>set('ajudante_extra',e.target.value)} placeholder="0,00" />
                   </FL>
                 )}
                 {visivel('obs') && (
@@ -739,6 +741,28 @@ export default function Ordens() {
                   </div>
                 )}
               </div>
+
+              {/* Resumo de paradas (só na edição, quando vier da importação) */}
+              {editingId && paradas.length > 0 && (
+                <div style={{
+                  padding:'12px 14px',background:'var(--bg2)',border:'1px solid var(--border)',
+                  borderRadius:'var(--radius)',marginBottom:14
+                }}>
+                  <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>
+                    📍 {paradas.length} Paradas (importadas do Roteasy)
+                  </div>
+                  <div style={{maxHeight:140,overflow:'auto',fontSize:12}}>
+                    {paradas.slice(0,10).map((p,i)=>(
+                      <div key={i} style={{padding:'4px 0',borderBottom:'1px solid var(--border)',display:'flex',gap:8}}>
+                        <span style={{color:'var(--text3)',width:24}}>#{p.seq}</span>
+                        <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.cliente_nome}</span>
+                        <span style={{color:'var(--text3)'}}>{p.peso?Number(p.peso).toFixed(1)+'kg':''}</span>
+                      </div>
+                    ))}
+                    {paradas.length > 10 && <div style={{color:'var(--text3)',fontSize:11,marginTop:4}}>... e mais {paradas.length-10}</div>}
+                  </div>
+                </div>
+              )}
 
               {/* Anexo */}
               {visivel('anexo') && (
@@ -837,6 +861,32 @@ export default function Ordens() {
         open={showImportRoteasy}
         onClose={() => setShowImportRoteasy(false)}
         onSuccess={() => { refetch(); setShowImportRoteasy(false); showToast('✅ Importação concluída com sucesso', 'success'); }}
+      />
+
+      {/* Pré-cadastro modais */}
+      <PreCadastroModal
+        tipo="motorista"
+        open={showPreMot}
+        onClose={() => setShowPreMot(false)}
+        onSuccess={async (criado) => {
+          showToast(`Motorista "${criado.nome}" pré-cadastrado`, 'success');
+          await refetchMot();
+          set('motorista_id', criado.id);
+          setShowPreMot(false);
+        }}
+        transportadoras={transportadoras || []}
+      />
+      <PreCadastroModal
+        tipo="veiculo"
+        open={showPreVei}
+        onClose={() => setShowPreVei(false)}
+        onSuccess={async (criado) => {
+          showToast(`Veículo "${criado.placa}" pré-cadastrado`, 'success');
+          await refetchVei();
+          set('veiculo_id', criado.id);
+          setShowPreVei(false);
+        }}
+        transportadoras={transportadoras || []}
       />
     </div>
   );

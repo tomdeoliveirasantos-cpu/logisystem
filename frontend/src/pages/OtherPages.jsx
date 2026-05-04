@@ -224,20 +224,40 @@ export function Veiculos() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm]   = useState({});
+  const [crlvFile, setCrlvFile] = useState(null);
   const { toast, showToast } = useToast();
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
   const open = (row=null) => {
     setEditing(row);
-    setForm(row ? { placa:row.placa, tipo:row.tipo, modelo:row.modelo, ano:row.ano, renavam:row.renavam, ag_ft:row.ag_ft, transportadora_id:row.transportadora_id } : {});
+    setForm(row ? {
+      placa:row.placa, tipo:row.tipo, modelo:row.modelo, ano:row.ano,
+      renavam:row.renavam, ag_ft:row.ag_ft, transportadora_id:row.transportadora_id,
+      proprietario:row.proprietario, responsavel:row.responsavel,
+      status_cadastro:row.status_cadastro,
+    } : {});
+    setCrlvFile(null);
     setModal(true);
   };
-  const close = () => { setModal(false); setEditing(null); setForm({}); };
+  const close = () => { setModal(false); setEditing(null); setForm({}); setCrlvFile(null); };
 
   const save = async () => {
     try {
-      if (editing) await api.put(`/veiculos/${editing.id}`, form);
-      else await api.post('/veiculos', form);
+      const fd = new FormData();
+      for (const [k,v] of Object.entries(form)) {
+        if (v != null && v !== '') fd.append(k, v);
+      }
+      if (crlvFile) fd.append('crlv', crlvFile);
+      // Marca como completo se admin tá editando
+      if (!form.status_cadastro) fd.append('status_cadastro', 'completo');
+
+      const token = localStorage.getItem('logi_token');
+      const url = editing
+        ? `https://api.wsdevsoft.com/api/veiculos/${editing.id}`
+        : 'https://api.wsdevsoft.com/api/veiculos';
+      const method = editing ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Erro ao salvar');
       showToast(editing ? 'Veículo atualizado!' : 'Veículo cadastrado!');
       refetch(); close();
     } catch(e) { showToast(e.message,'error'); }
@@ -255,10 +275,10 @@ export function Veiculos() {
       <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e agregados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="veiculos" columns={[
             {key:'placa',label:'Placa'},{key:'tipo',label:'Tipo'},{key:'modelo',label:'Modelo'},
             {key:'ano',label:'Ano'},{key:'renavam',label:'RENAVAM'},{key:'transportadora_nome',label:'Transportadora'},
-            {key:'ag_ft',label:'Ag/Frota'},
+            {key:'ag_ft',label:'Ag/Frota'},{key:'proprietario',label:'Proprietário'},
           ]} /><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Veículo</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
-        <thead><tr><th>Placa</th><th>Tipo</th><th>Modelo</th><th>Ano</th><th>RENAVAM</th><th>Transportadora</th><th>Ag/Ft</th><th></th></tr></thead>
+        <thead><tr><th>Placa</th><th>Tipo</th><th>Modelo</th><th>Ano</th><th>Transportadora</th><th>Ag/Ft</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
           {rows.map(r=>(<tr key={r.id}>
@@ -266,9 +286,11 @@ export function Veiculos() {
             <td><span className="badge badge-teal">{r.tipo}</span></td>
             <td>{r.modelo||'—'}</td>
             <td style={{fontSize:12}}>{r.ano||'—'}</td>
-            <td className="font-mono" style={{fontSize:11}}>{r.renavam||'—'}</td>
             <td style={{fontSize:12}}>{r.transportadora_nome||'—'}</td>
             <td><StatusBadge status={r.ag_ft}/></td>
+            <td>{r.status_cadastro==='pendente_admin'
+              ? <span className="badge" style={{background:'#fef3c7',color:'#92400e'}}>⚠️ Pendente</span>
+              : <span style={{fontSize:11,color:'var(--text3)'}}>OK</span>}</td>
             <td><div style={{display:'flex',gap:4}}>
               <button className="btn btn-ghost btn-sm" onClick={()=>open(r)}>Editar</button>
               <button className="btn btn-danger btn-sm" onClick={()=>desativar(r.id)}>✕</button>
@@ -276,7 +298,77 @@ export function Veiculos() {
           </tr>))}
         </tbody>
       </table></div></div></div>
-      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}><div className="modal" style={{maxWidth:520}}><div className="modal-header"><span className="modal-title">{editing?'Editar Veículo':'Cadastrar Veículo'}</span><button className="modal-close" onClick={close}>×</button></div><div className="modal-body"><div className="form-grid cols-2"><Field label="Placa *"><Input value={form.placa||''} onChange={e=>set('placa',e.target.value.toUpperCase())} placeholder="AAA0A00"/></Field><Field label="Tipo *"><Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)} options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v}))}/></Field><Field label="Modelo"><Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/></Field><Field label="Ano"><Input type="number" value={form.ano||''} onChange={e=>set('ano',e.target.value)} placeholder="2022"/></Field><Field label="RENAVAM"><Input value={form.renavam||''} onChange={e=>set('renavam',e.target.value)}/></Field><Field label="Ag / Frota *"><Select value={form.ag_ft||''} onChange={e=>set('ag_ft',e.target.value)} options={[{value:'frota',label:'Frota própria'},{value:'agregado',label:'Agregado'}]}/></Field><div style={{gridColumn:'span 2'}}><Field label="Transportadora"><Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)} options={(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))}/></Field></div></div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={close}>Cancelar</button><button className="btn btn-primary" onClick={save}>{editing?'Salvar':'Cadastrar'}</button></div></div></div>)}
+      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}>
+        <div className="modal" style={{maxWidth:560}}>
+          <div className="modal-header">
+            <span className="modal-title">{editing?'Editar Veículo':'Cadastrar Veículo'}</span>
+            <button className="modal-close" onClick={close}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-grid cols-2">
+              {/* 1. Frota */}
+              <Field label="Frota *">
+                <Select value={form.ag_ft||''} onChange={e=>set('ag_ft',e.target.value)}
+                  options={[{value:'',label:'Selecione...'},{value:'frota',label:'🏠 Próprio'},{value:'agregado',label:'🚛 Agregado'}]}/>
+              </Field>
+              {/* 2. Placa */}
+              <Field label="Placa *">
+                <Input value={form.placa||''} onChange={e=>set('placa',e.target.value.toUpperCase())} placeholder="AAA0A00"/>
+              </Field>
+              {/* 3. Tipo */}
+              <Field label="Tipo *">
+                <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
+                  options={[{value:'',label:'Selecione...'},...['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER'].map(v=>({value:v,label:v}))]}/>
+              </Field>
+              <Field label="Modelo">
+                <Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/>
+              </Field>
+              <Field label="Ano">
+                <Input type="number" value={form.ano||''} onChange={e=>set('ano',e.target.value)} placeholder="2022"/>
+              </Field>
+              <Field label="RENAVAM">
+                <Input value={form.renavam||''} onChange={e=>set('renavam',e.target.value)}/>
+              </Field>
+              <Field label="Proprietário">
+                <Input value={form.proprietario||''} onChange={e=>set('proprietario',e.target.value)} placeholder="Nome do dono"/>
+              </Field>
+              <Field label="Responsável">
+                <Input value={form.responsavel||''} onChange={e=>set('responsavel',e.target.value)} placeholder="Quem responde"/>
+              </Field>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Transportadora">
+                  <Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)}
+                    options={[{value:'',label:'— Nenhuma —'},...(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))]}/>
+                </Field>
+              </div>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="CRLV (PDF/imagem)">
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={e=>setCrlvFile(e.target.files?.[0]||null)}
+                    style={{padding:6,fontSize:13}} />
+                  {editing?.crlv_arquivo_nome && !crlvFile && (
+                    <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                      📎 Arquivo atual: {editing.crlv_arquivo_nome}
+                    </div>
+                  )}
+                </Field>
+              </div>
+              {editing?.status_cadastro === 'pendente_admin' && (
+                <div style={{gridColumn:'span 2'}}>
+                  <Field label="Status do Cadastro">
+                    <Select value={form.status_cadastro||'pendente_admin'} onChange={e=>set('status_cadastro',e.target.value)}
+                      options={[{value:'pendente_admin',label:'⚠️ Pendente Administrativo'},{value:'completo',label:'✓ Completo'}]} />
+                  </Field>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={close}>Cancelar</button>
+            <button className="btn btn-primary" onClick={save}>{editing?'Salvar':'Cadastrar'}</button>
+          </div>
+        </div>
+      </div>)}
       {toast&&<Toast {...toast}/>}
     </div>
   );
@@ -289,20 +381,45 @@ export function Motoristas() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm]   = useState({});
+  const [cnhFile, setCnhFile] = useState(null);
   const { toast, showToast } = useToast();
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
   const open = (row=null) => {
     setEditing(row);
-    setForm(row ? { nome:row.nome, cnh:row.cnh, telefone:row.telefone, transportadora_id:row.transportadora_id, veiculo_padrao_id:row.veiculo_padrao_id } : {});
+    setForm(row ? {
+      nome:row.nome, cnh:row.cnh, telefone:row.telefone,
+      transportadora_id:row.transportadora_id, veiculo_padrao_id:row.veiculo_padrao_id,
+      cnh_validade:row.cnh_validade?.substring(0,10) || '',
+      cnh_categoria:row.cnh_categoria || '',
+      endereco_cep:row.endereco_cep, endereco_logradouro:row.endereco_logradouro,
+      endereco_numero:row.endereco_numero, endereco_complemento:row.endereco_complemento,
+      endereco_bairro:row.endereco_bairro, endereco_cidade:row.endereco_cidade, endereco_estado:row.endereco_estado,
+      contato_esposa:row.contato_esposa, contato_pai:row.contato_pai, contato_mae:row.contato_mae,
+      contato_outro_nome:row.contato_outro_nome, contato_outro_telefone:row.contato_outro_telefone,
+      status_cadastro:row.status_cadastro,
+    } : {});
+    setCnhFile(null);
     setModal(true);
   };
-  const close = () => { setModal(false); setEditing(null); setForm({}); };
+  const close = () => { setModal(false); setEditing(null); setForm({}); setCnhFile(null); };
 
   const save = async () => {
     try {
-      if (editing) await api.put(`/motoristas/${editing.id}`, form);
-      else await api.post('/motoristas', form);
+      const fd = new FormData();
+      for (const [k,v] of Object.entries(form)) {
+        if (v != null && v !== '') fd.append(k, v);
+      }
+      if (cnhFile) fd.append('cnh_arquivo', cnhFile);
+      if (!form.status_cadastro) fd.append('status_cadastro', 'completo');
+
+      const token = localStorage.getItem('logi_token');
+      const url = editing
+        ? `https://api.wsdevsoft.com/api/motoristas/${editing.id}`
+        : 'https://api.wsdevsoft.com/api/motoristas';
+      const method = editing ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Erro ao salvar');
       showToast(editing ? 'Motorista atualizado!' : 'Motorista cadastrado!');
       refetch(); close();
     } catch(e) { showToast(e.message,'error'); }
@@ -312,34 +429,138 @@ export function Motoristas() {
   return (
     <div>
       <div className="page-header"><div><div className="page-title">Motoristas</div><div className="page-desc">Motoristas próprios e agregados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="motoristas" columns={[
-            {key:'nome',label:'Nome'},{key:'cnh',label:'CNH'},{key:'telefone',label:'Telefone'},
+            {key:'nome',label:'Nome'},{key:'cnh',label:'CNH'},{key:'cnh_categoria',label:'Cat.'},
+            {key:'cnh_validade',label:'Validade CNH'},{key:'telefone',label:'Telefone'},
             {key:'veiculo_padrao_placa',label:'Veículo Padrão'},{key:'transportadora_nome',label:'Transportadora'},
           ]} /><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Motorista</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>CNH</th><th>Telefone</th><th>Veículo Padrão</th><th>Transportadora</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>CNH</th><th>Cat.</th><th>Validade</th><th>Telefone</th><th>Veículo</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:6}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
-          {rows.map(r=>(<tr key={r.id}>
-            <td className="fw-500">{r.nome}</td>
-            <td className="font-mono" style={{fontSize:12}}>{r.cnh||'—'}</td>
-            <td style={{fontSize:12}}>{r.telefone||'—'}</td>
-            <td style={{fontSize:12}}>
-              {r.veiculo_padrao_placa
-                ? <span><span className="badge badge-teal">{r.veiculo_padrao_tipo}</span> <span style={{marginLeft:4}}>{r.veiculo_padrao_placa}</span></span>
-                : <span style={{color:'var(--text3)'}}>—</span>}
-            </td>
-            <td style={{fontSize:12}}>{r.transportadora_nome||'—'}</td>
-            <td><button className="btn btn-ghost btn-sm" onClick={()=>open(r)}>Editar</button></td>
-          </tr>))}
+          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
+          {rows.map(r=>{
+            const venc = r.cnh_validade ? new Date(r.cnh_validade) : null;
+            const proxVenc = venc && (venc - new Date()) < (60*86400000); // 60 dias
+            return (<tr key={r.id}>
+              <td className="fw-500">{r.nome}</td>
+              <td className="font-mono" style={{fontSize:12}}>{r.cnh||'—'}</td>
+              <td style={{fontSize:12}}>{r.cnh_categoria||'—'}</td>
+              <td style={{fontSize:12,color:proxVenc?'#dc2626':'inherit',fontWeight:proxVenc?600:400}}>
+                {venc?venc.toLocaleDateString('pt-BR'):'—'}{proxVenc&&' ⚠️'}
+              </td>
+              <td style={{fontSize:12}}>{r.telefone||'—'}</td>
+              <td style={{fontSize:12}}>
+                {r.veiculo_padrao_placa
+                  ? <span><span className="badge badge-teal">{r.veiculo_padrao_tipo}</span> <span style={{marginLeft:4}}>{r.veiculo_padrao_placa}</span></span>
+                  : <span style={{color:'var(--text3)'}}>—</span>}
+              </td>
+              <td>{r.status_cadastro==='pendente_admin'
+                ? <span className="badge" style={{background:'#fef3c7',color:'#92400e'}}>⚠️ Pendente</span>
+                : <span style={{fontSize:11,color:'var(--text3)'}}>OK</span>}</td>
+              <td><button className="btn btn-ghost btn-sm" onClick={()=>open(r)}>Editar</button></td>
+            </tr>);
+          })}
         </tbody>
       </table></div></div></div>
-      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}><div className="modal" style={{maxWidth:480}}><div className="modal-header"><span className="modal-title">{editing?'Editar Motorista':'Cadastrar Motorista'}</span><button className="modal-close" onClick={close}>×</button></div><div className="modal-body"><div className="form-grid cols-2">
-        <div style={{gridColumn:'span 2'}}><Field label="Nome completo *"><Input value={form.nome||''} onChange={e=>set('nome',e.target.value)}/></Field></div>
-        <Field label="CNH"><Input value={form.cnh||''} onChange={e=>set('cnh',e.target.value)}/></Field>
-        <Field label="Telefone"><Input value={form.telefone||''} onChange={e=>set('telefone',e.target.value)}/></Field>
-        <div style={{gridColumn:'span 2'}}><Field label="Veículo Padrão"><Select value={form.veiculo_padrao_id||''} onChange={e=>set('veiculo_padrao_id',e.target.value)} options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo}`}))}/></Field></div>
-        <div style={{gridColumn:'span 2'}}><Field label="Transportadora"><Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)} options={(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))}/></Field></div>
-      </div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={close}>Cancelar</button><button className="btn btn-primary" onClick={save}>{editing?'Salvar':'Cadastrar'}</button></div></div></div>)}
+      {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}>
+        <div className="modal" style={{maxWidth:640}}>
+          <div className="modal-header">
+            <span className="modal-title">{editing?'Editar Motorista':'Cadastrar Motorista'}</span>
+            <button className="modal-close" onClick={close}>×</button>
+          </div>
+          <div className="modal-body">
+            {/* Bloco identificação */}
+            <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Identificação</div>
+            <div className="form-grid cols-2" style={{marginBottom:14}}>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Nome completo *">
+                  <Input value={form.nome||''} onChange={e=>set('nome',e.target.value)}/>
+                </Field>
+              </div>
+              <Field label="CNH"><Input value={form.cnh||''} onChange={e=>set('cnh',e.target.value)}/></Field>
+              <Field label="Categoria CNH">
+                <Select value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}
+                  options={[{value:'',label:'—'},...['A','B','C','D','E','AB','AC','AD','AE'].map(v=>({value:v,label:v}))]}/>
+              </Field>
+              <Field label="Validade CNH">
+                <Input type="date" value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)}/>
+              </Field>
+              <Field label="Telefone"><Input value={form.telefone||''} onChange={e=>set('telefone',e.target.value)}/></Field>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="CNH (PDF/imagem)">
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={e=>setCnhFile(e.target.files?.[0]||null)} style={{padding:6,fontSize:13}} />
+                  {editing?.cnh_arquivo_nome && !cnhFile && (
+                    <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                      📎 Arquivo atual: {editing.cnh_arquivo_nome}
+                    </div>
+                  )}
+                </Field>
+              </div>
+            </div>
+
+            {/* Bloco endereço */}
+            <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Endereço Residencial</div>
+            <div className="form-grid cols-2" style={{marginBottom:14}}>
+              <Field label="CEP"><Input value={form.endereco_cep||''} onChange={e=>set('endereco_cep',e.target.value)}/></Field>
+              <Field label="Cidade / UF">
+                <div style={{display:'flex',gap:6}}>
+                  <Input value={form.endereco_cidade||''} onChange={e=>set('endereco_cidade',e.target.value)}/>
+                  <Input value={form.endereco_estado||''} onChange={e=>set('endereco_estado',e.target.value.toUpperCase())} maxLength={2} style={{width:60}}/>
+                </div>
+              </Field>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Logradouro"><Input value={form.endereco_logradouro||''} onChange={e=>set('endereco_logradouro',e.target.value)}/></Field>
+              </div>
+              <Field label="Número"><Input value={form.endereco_numero||''} onChange={e=>set('endereco_numero',e.target.value)}/></Field>
+              <Field label="Complemento"><Input value={form.endereco_complemento||''} onChange={e=>set('endereco_complemento',e.target.value)}/></Field>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Bairro"><Input value={form.endereco_bairro||''} onChange={e=>set('endereco_bairro',e.target.value)}/></Field>
+              </div>
+            </div>
+
+            {/* Bloco contatos */}
+            <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Telefones de Contato</div>
+            <div className="form-grid cols-2" style={{marginBottom:14}}>
+              <Field label="Esposa"><Input value={form.contato_esposa||''} onChange={e=>set('contato_esposa',e.target.value)}/></Field>
+              <Field label="Pai"><Input value={form.contato_pai||''} onChange={e=>set('contato_pai',e.target.value)}/></Field>
+              <Field label="Mãe"><Input value={form.contato_mae||''} onChange={e=>set('contato_mae',e.target.value)}/></Field>
+              <Field label="Outro (nome)"><Input value={form.contato_outro_nome||''} onChange={e=>set('contato_outro_nome',e.target.value)}/></Field>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Outro (telefone)"><Input value={form.contato_outro_telefone||''} onChange={e=>set('contato_outro_telefone',e.target.value)}/></Field>
+              </div>
+            </div>
+
+            {/* Bloco vínculos */}
+            <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Vínculos</div>
+            <div className="form-grid cols-2">
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Veículo Padrão">
+                  <Select value={form.veiculo_padrao_id||''} onChange={e=>set('veiculo_padrao_id',e.target.value)}
+                    options={[{value:'',label:'— Nenhum —'},...(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo}`}))]}/>
+                </Field>
+              </div>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Transportadora">
+                  <Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)}
+                    options={[{value:'',label:'— Nenhuma —'},...(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))]}/>
+                </Field>
+              </div>
+              {editing?.status_cadastro === 'pendente_admin' && (
+                <div style={{gridColumn:'span 2'}}>
+                  <Field label="Status do Cadastro">
+                    <Select value={form.status_cadastro||'pendente_admin'} onChange={e=>set('status_cadastro',e.target.value)}
+                      options={[{value:'pendente_admin',label:'⚠️ Pendente Administrativo'},{value:'completo',label:'✓ Completo'}]} />
+                  </Field>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={close}>Cancelar</button>
+            <button className="btn btn-primary" onClick={save}>{editing?'Salvar':'Cadastrar'}</button>
+          </div>
+        </div>
+      </div>)}
       {toast&&<Toast {...toast}/>}
     </div>
   );

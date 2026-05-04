@@ -638,39 +638,16 @@ export default function Ordens() {
                   </Field>
                 )}
 
-                {/* Veículo - com botão + Novo */}
-                <Field label={<span>Veículo <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
-                  <div style={{display:'flex',gap:6}}>
-                    <div style={{flex:1}}>
-                      <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
-                        options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚚 Terceiro'}${v.status_cadastro==='pendente_admin'?' ⚠️':''}`}))} />
+                {/* Detalhes do Ajudante — só aparecem se Ajudante Extra > 0 */}
+                {!ehMotorista && parseFloat(form.ajudante_extra) > 0 && (
+                  <div style={{
+                    border:'1px solid var(--border)', borderRadius:'var(--radius)',
+                    padding:12, background:'var(--bg2)', display:'flex', flexDirection:'column', gap:10,
+                  }}>
+                    <div style={{fontSize:11, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px'}}>
+                      👷 Detalhes do Ajudante
                     </div>
-                    <button type="button" className="btn btn-ghost" onClick={()=>setShowPreVei(true)}
-                      style={{padding:'6px 12px',whiteSpace:'nowrap'}} title="Pré-cadastro rápido">
-                      + Novo
-                    </button>
-                  </div>
-                </Field>
 
-                {/* Tipo de Frete + Multiplicador (define cálculo CAR/CAP) */}
-                <div className="form-grid cols-2">
-                  <Field label={<span>Tipo de Frete <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(usa do veículo, mas pode mudar)</span></span>}>
-                    <Select value={form.tipo_frete||''} onChange={e=>set('tipo_frete',e.target.value)}
-                      options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v}))} />
-                  </Field>
-                  <Field label={<span>Multiplicador <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(ex: 2 = paga/recebe 2× o frete)</span></span>}>
-                    <Input type="number" min={1} max={9} step={1}
-                      value={form.multiplicador_frete||1}
-                      onChange={e=>set('multiplicador_frete', Math.max(1, Math.min(9, parseInt(e.target.value,10) || 1)))}
-                      disabled={ehMotorista && !editingId}
-                      title={ehMotorista ? 'Editável durante a viagem' : ''}
-                    />
-                  </Field>
-                </div>
-
-                {/* Ajudantes — só admin/supervisor */}
-                {!ehMotorista && (
-                  <>
                     {/* Nome livre (rápido, sem cadastrar) */}
                     <Field label={<span>Nome do Ajudante <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(texto livre, opcional)</span></span>}>
                       <Input
@@ -683,7 +660,7 @@ export default function Ordens() {
                     {/* Multi-select de ajudantes cadastrados (com histórico) */}
                     <Field label={<span>Ou selecionar Cadastrados <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(múltiplos)</span></span>}>
                       <div style={{display:'flex',gap:6,alignItems:'flex-start'}}>
-                        <div style={{flex:1,border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:8,minHeight:42,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
+                        <div style={{flex:1,border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:8,minHeight:42,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center',background:'var(--bg)'}}>
                           {ajudantesIds.map(aId => {
                             const a = (ajudantesDisp||[]).find(x=>String(x.id)===String(aId));
                             return (
@@ -718,8 +695,38 @@ export default function Ordens() {
                         </div>
                       )}
                     </Field>
-                  </>
+                  </div>
                 )}
+
+                {/* Veículo - com botão + Novo */}
+                <Field label={<span>Veículo <span style={{color:'var(--red)',fontSize:10,fontWeight:700}}>*</span></span>}>
+                  <div style={{display:'flex',gap:6}}>
+                    <div style={{flex:1}}>
+                      <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
+                        options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚚 Terceiro'}${v.status_cadastro==='pendente_admin'?' ⚠️':''}`}))} />
+                    </div>
+                    <button type="button" className="btn btn-ghost" onClick={()=>setShowPreVei(true)}
+                      style={{padding:'6px 12px',whiteSpace:'nowrap'}} title="Pré-cadastro rápido">
+                      + Novo
+                    </button>
+                  </div>
+                </Field>
+
+                {/* Tipo de Frete + Multiplicador (define cálculo CAR/CAP) */}
+                <div className="form-grid cols-2">
+                  <Field label={<span>Tipo de Frete <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(usa do veículo, mas pode mudar)</span></span>}>
+                    <Select value={form.tipo_frete||''} onChange={e=>set('tipo_frete',e.target.value)}
+                      options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v}))} />
+                  </Field>
+                  <Field label={<span>Multiplicador <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(ex: 2 = paga/recebe 2× o frete)</span></span>}>
+                    <Input type="number" min={1} max={9} step={1}
+                      value={form.multiplicador_frete||1}
+                      onChange={e=>set('multiplicador_frete', Math.max(1, Math.min(9, parseInt(e.target.value,10) || 1)))}
+                      disabled={ehMotorista && !editingId}
+                      title={ehMotorista ? 'Editável durante a viagem' : ''}
+                    />
+                  </Field>
+                </div>
 
                 {/* Região - full width */}
                 <Field label={<span>Região <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(define frete)</span></span>}>

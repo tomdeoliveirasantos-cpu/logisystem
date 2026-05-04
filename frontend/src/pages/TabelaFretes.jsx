@@ -342,9 +342,179 @@ function TabPagar() {
   );
 }
 
+// ════ Aba REAJUSTES ══════════════════════════════════════════════════════════
+function TabReajustes() {
+  const { data, loading, refetch } = useFetch('/reajustes?tipo=recebido');
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({});
+  const { toast, showToast } = useToast();
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const rows = data || [];
+
+  // Calcula fator acumulado HOJE
+  const hoje = new Date().toISOString().slice(0, 10);
+  const fatorHoje = useMemo(() => {
+    let f = 1.0;
+    rows.forEach(r => {
+      if (r.data_vigencia.slice(0, 10) <= hoje) {
+        f *= (1 + parseFloat(r.percentual) / 100);
+      }
+    });
+    return f;
+  }, [rows, hoje]);
+
+  const open = (row = null) => {
+    setEditing(row);
+    setForm(row ? {
+      ...row,
+      data_vigencia: row.data_vigencia.slice(0, 10),
+    } : {
+      tipo: 'recebido',
+      percentual: '',
+      data_vigencia: hoje,
+      descricao: '',
+    });
+    setModal(true);
+  };
+  const close = () => { setModal(false); setEditing(null); };
+
+  const save = async () => {
+    try {
+      const payload = {
+        tipo: 'recebido',
+        percentual: parseFloat(form.percentual),
+        data_vigencia: form.data_vigencia,
+        descricao: form.descricao || null,
+      };
+      if (editing) await api.put(`/reajustes/${editing.id}`, payload);
+      else await api.post('/reajustes', payload);
+      showToast('Reajuste salvo!');
+      close();
+      refetch();
+    } catch (e) { showToast(e.message, 'error'); }
+  };
+
+  const remove = async (row) => {
+    if (!confirm(`Remover reajuste de ${row.percentual}% (${row.data_vigencia.slice(0,10)})?`)) return;
+    try {
+      await api.delete(`/reajustes/${row.id}`);
+      showToast('Reajuste removido!');
+      refetch();
+    } catch (e) { showToast(e.message, 'error'); }
+  };
+
+  return (
+    <div>
+      <div style={{
+        padding: '14px 16px', background: '#FEF3C7', border: '1px solid #FCD34D',
+        borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13, color: '#92400E',
+      }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>📈 Reajustes do frete RECEBIDO</div>
+        <div>Aplicado on-the-fly no cálculo do CAR. Cada reajuste é cumulativo a partir da sua data de vigência. Não afeta CARs já lançados — só novas OTs ou OTs reabertas/editadas.</div>
+        <div style={{ marginTop: 8, fontSize: 14 }}>
+          <strong>Fator acumulado hoje:</strong>{' '}
+          {fatorHoje === 1
+            ? <span>sem reajuste</span>
+            : <span style={{ color: '#16A34A', fontWeight: 700 }}>
+                ×{fatorHoje.toFixed(4)} ({((fatorHoje - 1) * 100).toFixed(2)}%)
+              </span>}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button className="btn btn-primary" onClick={() => open()}>+ Novo Reajuste</button>
+      </div>
+
+      <div className="card fade-up">
+        {loading && <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)' }}>Carregando…</div>}
+        {!loading && rows.length === 0 && (
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)' }}>
+            Nenhum reajuste cadastrado.
+          </div>
+        )}
+        {!loading && rows.length > 0 && (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Vigência</th>
+                <th>Percentual</th>
+                <th>Descrição</th>
+                <th style={{ width: 150, textAlign: 'right' }}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const dataVig = r.data_vigencia.slice(0, 10);
+                const ativo = dataVig <= hoje;
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      {dataVig.split('-').reverse().join('/')}
+                      {!ativo && <span style={{ marginLeft: 8, fontSize: 11, color: '#A16207', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4 }}>futuro</span>}
+                    </td>
+                    <td style={{ fontWeight: 600, color: '#16A34A' }}>+{parseFloat(r.percentual).toFixed(2)}%</td>
+                    <td>{r.descricao || '—'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => open(r)}>Editar</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => remove(r)} style={{ color: '#DC2626' }}>Remover</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {modal && (
+        <Modal onClose={close} title={editing ? 'Editar Reajuste' : 'Novo Reajuste'}>
+          <Field label="Percentual (%)">
+            <Input
+              type="number" step="0.01"
+              value={form.percentual || ''}
+              onChange={e => set('percentual', e.target.value)}
+              placeholder="Ex: 3.50"
+            />
+          </Field>
+          <Field label="Data de Vigência">
+            <Input
+              type="date"
+              value={form.data_vigencia || ''}
+              onChange={e => set('data_vigencia', e.target.value)}
+            />
+          </Field>
+          <Field label="Descrição (opcional)">
+            <Input
+              value={form.descricao || ''}
+              onChange={e => set('descricao', e.target.value)}
+              placeholder="Ex: Reajuste anual Léo Madeiras 2026"
+            />
+          </Field>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+            <button className="btn btn-ghost" onClick={close}>Cancelar</button>
+            <button className="btn btn-primary" onClick={save}>Salvar</button>
+          </div>
+        </Modal>
+      )}
+      {toast && <Toast {...toast} />}
+    </div>
+  );
+}
+
 // ════ Componente Principal ═══════════════════════════════════════════════════
 export default function TabelaFretes() {
   const [tab, setTab] = useState('pagar');
+
+  const tabBtnStyle = (active) => ({
+    padding: '10px 20px', border: 'none', cursor: 'pointer',
+    fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+    background: 'transparent',
+    color: active ? 'var(--accent)' : 'var(--text3)',
+    borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+    marginBottom: -2, transition: 'all .15s',
+  });
 
   return (
     <div>
@@ -361,35 +531,20 @@ export default function TabelaFretes() {
           display: 'flex', gap: 0, marginBottom: 20,
           borderBottom: '2px solid var(--border)',
         }}>
-          <button
-            onClick={() => setTab('receber')}
-            style={{
-              padding: '10px 20px', border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-              background: 'transparent',
-              color: tab === 'receber' ? 'var(--accent)' : 'var(--text3)',
-              borderBottom: tab === 'receber' ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: -2, transition: 'all .15s',
-            }}
-          >
+          <button onClick={() => setTab('receber')} style={tabBtnStyle(tab === 'receber')}>
             💰 Frete Recebido
           </button>
-          <button
-            onClick={() => setTab('pagar')}
-            style={{
-              padding: '10px 20px', border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-              background: 'transparent',
-              color: tab === 'pagar' ? 'var(--accent)' : 'var(--text3)',
-              borderBottom: tab === 'pagar' ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: -2, transition: 'all .15s',
-            }}
-          >
+          <button onClick={() => setTab('pagar')} style={tabBtnStyle(tab === 'pagar')}>
             🚚 Frete Terceiro (Pagar)
+          </button>
+          <button onClick={() => setTab('reajustes')} style={tabBtnStyle(tab === 'reajustes')}>
+            📈 Reajustes
           </button>
         </div>
 
-        {tab === 'receber' ? <TabReceber /> : <TabPagar />}
+        {tab === 'receber' && <TabReceber />}
+        {tab === 'pagar' && <TabPagar />}
+        {tab === 'reajustes' && <TabReajustes />}
       </div>
     </div>
   );

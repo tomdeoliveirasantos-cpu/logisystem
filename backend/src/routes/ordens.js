@@ -126,7 +126,18 @@ async function regenerarFinanceiroOT(client, ordemId) {
   const tipoFreteEfetivo = ot.tipo_frete || ot.veiculo_tipo;
   const mult = Math.max(1, parseInt(ot.multiplicador_frete, 10) || 1);
 
-  // CAR — frete recebido (1 por OT, baseado em tipo_frete × multiplicador)
+  // Fator de reajuste recebido vigente na data da OT
+  let fatorReajusteRecebido = 1.0;
+  try {
+    const { rows: rj } = await client.query(
+      `SELECT percentual FROM logi_reajustes_frete
+       WHERE tipo = 'recebido' AND data_vigencia <= $1`,
+      [ot.data]
+    );
+    rj.forEach(r => { fatorReajusteRecebido *= (1 + parseFloat(r.percentual) / 100); });
+  } catch (e) { /* tabela pode não existir ainda — ignora */ }
+
+  // CAR — frete recebido (1 por OT, baseado em tipo_frete × multiplicador × reajuste)
   if (tipoFreteEfetivo) {
     try {
       const { rows: fr } = await client.query(
@@ -135,13 +146,17 @@ async function regenerarFinanceiroOT(client, ordemId) {
         [tipoFreteEfetivo]
       );
       if (fr.length && fr[0].valor) {
-        const valorTotal = parseFloat(fr[0].valor) * mult;
+        const valorBase = parseFloat(fr[0].valor) * mult;
+        const valorTotal = Number((valorBase * fatorReajusteRecebido).toFixed(2));
         const sufMult = mult > 1 ? ` (${mult}x)` : '';
+        const sufReaj = fatorReajusteRecebido !== 1
+          ? ` [reajuste ${((fatorReajusteRecebido - 1) * 100).toFixed(2)}%]`
+          : '';
         await client.query(
           `INSERT INTO logi_contas_receber (ordem_id, cliente, valor, vencimento, obs)
            VALUES ($1, $2, $3, $4, $5)`,
           [ordemId, 'Léo Madeiras', valorTotal, ot.data,
-           `Frete recebido - ${tipoFreteEfetivo}${sufMult} - Rota ${ot.numero_rota || ordemId}`]
+           `Frete recebido - ${tipoFreteEfetivo}${sufMult}${sufReaj} - Rota ${ot.numero_rota || ordemId}`]
         );
       }
     } catch (e) { console.error('CAR:', e.message); }

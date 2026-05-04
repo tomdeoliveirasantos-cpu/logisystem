@@ -208,7 +208,7 @@ export default function CadastroMotoristaPublico() {
     <div style={s.container}>
       <div style={s.header}>
         <div style={s.logo}>LogiSystem</div>
-        <div style={s.subtitle}>Cadastro de Motorista {nomeConvite ? `— ${nomeConvite}` : ''}</div>
+        <div style={s.subtitle}>Cadastro de Colaborador {nomeConvite ? `— ${nomeConvite}` : ''}</div>
       </div>
 
       <div style={s.card}>
@@ -223,6 +223,22 @@ export default function CadastroMotoristaPublico() {
         {step === 0 && (
           <div style={s.stepCard}>
             <div style={s.grid2}>
+              <div style={{gridColumn:'span 2'}}>
+                <label style={s.label}>Tipo de Colaborador *</label>
+                <select style={s.input} value={form.tipo_colaborador||''}
+                  onChange={e=>set('tipo_colaborador', e.target.value)}>
+                  <option value="">— Selecione —</option>
+                  <option value="motorista_proprio">🏠 Motorista Próprio</option>
+                  <option value="motorista_agregado">🚛 Motorista Agregado</option>
+                  <option value="ajudante">👷 Ajudante</option>
+                  <option value="administrativo">💼 Administrativo</option>
+                </select>
+                {(form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo') && (
+                  <div style={{fontSize:12, color:'#16a34a', marginTop:6, padding:8, background:'#f0fdf4', borderRadius:6}}>
+                    ℹ️ Para esse tipo, só precisamos de nome, CPF e telefone. As demais etapas serão puladas.
+                  </div>
+                )}
+              </div>
               <div style={{gridColumn:'span 2'}}>
                 <label style={s.label}>Nome Completo *</label>
                 <input style={s.input} value={form.nome||''} onChange={e=>set('nome',e.target.value)} placeholder="Nome completo" />
@@ -431,9 +447,19 @@ export default function CadastroMotoristaPublico() {
 
         {/* Navegação */}
         <div style={{display:'flex', justifyContent:'space-between', marginBottom:40, marginTop:8}}>
-          {step > 0 ? <button style={{...s.btn, ...s.btnGhost}} onClick={()=>setStep(st=>st-1)}>← Anterior</button> : <div/>}
+          {step > 0 ? (
+            <button style={{...s.btn, ...s.btnGhost}} onClick={()=>{
+              const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
+              // Se está em step 4 (contrato) e é simples, voltar direto pro step 0
+              setStep(st => (ehSimples && st === 4) ? 0 : st - 1);
+            }}>← Anterior</button>
+          ) : <div/>}
           {step < 4 ? (
-            <button style={{...s.btn, ...s.btnPrimary}} onClick={()=>setStep(st=>st+1)}>Próximo →</button>
+            <button style={{...s.btn, ...s.btnPrimary}} onClick={()=>{
+              const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
+              // Se ajudante/admin, pular direto pra etapa 4 (Contrato)
+              setStep(st => (ehSimples && st === 0) ? 4 : st + 1);
+            }}>Próximo →</button>
           ) : (
             <button style={{...s.btn, ...s.btnPrimary, opacity: sending ? 0.6 : 1}} onClick={submit} disabled={sending}>
               {sending ? 'Enviando...' : '✓ Enviar Cadastro'}

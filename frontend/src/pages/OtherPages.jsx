@@ -389,6 +389,7 @@ export function Motoristas() {
     setEditing(row);
     setForm(row ? {
       nome:row.nome, cnh:row.cnh, telefone:row.telefone,
+      tipo_colaborador:row.tipo_colaborador || 'pendente',
       transportadora_id:row.transportadora_id, veiculo_padrao_id:row.veiculo_padrao_id,
       cnh_validade:row.cnh_validade?.substring(0,10) || '',
       cnh_categoria:row.cnh_categoria || '',
@@ -428,20 +429,28 @@ export function Motoristas() {
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Motoristas</div><div className="page-desc">Motoristas próprios e agregados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="motoristas" columns={[
-            {key:'nome',label:'Nome'},{key:'cnh',label:'CNH'},{key:'cnh_categoria',label:'Cat.'},
+      <div className="page-header"><div><div className="page-title">Colaboradores</div><div className="page-desc">Motoristas, ajudantes e administrativos</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="colaboradores" columns={[
+            {key:'nome',label:'Nome'},{key:'tipo_colaborador',label:'Tipo'},{key:'cnh',label:'CNH'},{key:'cnh_categoria',label:'Cat.'},
             {key:'cnh_validade',label:'Validade CNH'},{key:'telefone',label:'Telefone'},
             {key:'veiculo_padrao_placa',label:'Veículo Padrão'},{key:'transportadora_nome',label:'Transportadora'},
-          ]} /><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Motorista</button></div></div>
+          ]} /><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Colaborador</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>CNH</th><th>Cat.</th><th>Validade</th><th>Telefone</th><th>Veículo</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Tipo</th><th>CNH</th><th>Cat.</th><th>Validade</th><th>Telefone</th><th>Veículo</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
+          {loading&&Array.from({length:5}).map((_,i)=>(<tr key={i}>{Array.from({length:9}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'65%'}}/></td>))}</tr>))}
           {rows.map(r=>{
             const venc = r.cnh_validade ? new Date(r.cnh_validade) : null;
             const proxVenc = venc && (venc - new Date()) < (60*86400000); // 60 dias
+            const tipoLabels = {
+              motorista_proprio:'🏠 Motorista Próprio',
+              motorista_agregado:'🚛 Motorista Agregado',
+              ajudante:'👷 Ajudante',
+              administrativo:'💼 Administrativo',
+              pendente:'⏳ Pendente',
+            };
             return (<tr key={r.id}>
               <td className="fw-500">{r.nome}</td>
+              <td style={{fontSize:12}}>{tipoLabels[r.tipo_colaborador] || '—'}</td>
               <td className="font-mono" style={{fontSize:12}}>{r.cnh||'—'}</td>
               <td style={{fontSize:12}}>{r.cnh_categoria||'—'}</td>
               <td style={{fontSize:12,color:proxVenc?'#dc2626':'inherit',fontWeight:proxVenc?600:400}}>
@@ -464,13 +473,26 @@ export function Motoristas() {
       {modal&&(<div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&close()}>
         <div className="modal" style={{maxWidth:640}}>
           <div className="modal-header">
-            <span className="modal-title">{editing?'Editar Motorista':'Cadastrar Motorista'}</span>
+            <span className="modal-title">{editing?'Editar Colaborador':'Cadastrar Colaborador'}</span>
             <button className="modal-close" onClick={close}>×</button>
           </div>
           <div className="modal-body">
             {/* Bloco identificação */}
             <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Identificação</div>
             <div className="form-grid cols-2" style={{marginBottom:14}}>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Tipo de Colaborador *">
+                  <Select value={form.tipo_colaborador||''} onChange={e=>set('tipo_colaborador',e.target.value)}
+                    options={[
+                      {value:'',label:'— Selecione —'},
+                      {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
+                      {value:'motorista_agregado',label:'🚛 Motorista Agregado'},
+                      {value:'ajudante',label:'👷 Ajudante'},
+                      {value:'administrativo',label:'💼 Administrativo'},
+                      {value:'pendente',label:'⏳ Pendente (admin classificará)'},
+                    ]}/>
+                </Field>
+              </div>
               <div style={{gridColumn:'span 2'}}>
                 <Field label="Nome completo *">
                   <Input value={form.nome||''} onChange={e=>set('nome',e.target.value)}/>

@@ -158,6 +158,7 @@ export default function Ordens() {
   const { data, loading, refetch }   = useFetch(`/ordens?${qs}`, [filtInicio, filtFim, filtStatus]);
   const { data: clientes }                            = useFetch('/clientes');
   const { data: motoristas, refetch: refetchMot }     = useFetch('/motoristas');
+  const { data: ajudantesDisp }                       = useFetch('/motoristas?tipo_colaborador=ajudante');
   const { data: veiculos,   refetch: refetchVei }     = useFetch('/veiculos');
   const { data: regioes }                             = useFetch('/financeiro/fretes/regioes');
 
@@ -185,6 +186,14 @@ export default function Ordens() {
       .catch(() => setFreteData(null))
       .finally(() => setFreteLoading(false));
   }, [veiculoSelecionado, form.regiao]);
+
+  // Auto-preencher tipo_frete a partir do veículo (se ainda vazio)
+  useEffect(() => {
+    if (veiculoSelecionado?.tipo && !form.tipo_frete) {
+      setForm(f => ({ ...f, tipo_frete: veiculoSelecionado.tipo }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [veiculoSelecionado]);
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const onMotoristaChange = (id) => {
@@ -225,6 +234,8 @@ export default function Ordens() {
       const fd = new FormData();
       fd.append('data', form.data);
       fd.append('tipo_frota', form.tipo_frota);
+      if(form.tipo_frete) fd.append('tipo_frete', form.tipo_frete);
+      fd.append('multiplicador_frete', form.multiplicador_frete || 1);
       if(form.numero_rota) fd.append('numero_rota', form.numero_rota);
       if(form.quant_entregas) fd.append('quant_entregas', form.quant_entregas);
       if(form.cliente_id) fd.append('cliente_id', form.cliente_id);
@@ -250,6 +261,9 @@ export default function Ordens() {
 
       // Paradas inline (sempre que houver)
       if (paradas.length) fd.append('paradas', JSON.stringify(paradas));
+
+      // Ajudantes — sempre enviar (array vazio significa remover todos)
+      fd.append('ajudantes', JSON.stringify(ajudantesIds.map(id => ({ motorista_id: id }))));
 
       const token = localStorage.getItem('logi_token');
       const url = editingId
@@ -280,6 +294,7 @@ export default function Ordens() {
   const [showImportRoteasy, setShowImportRoteasy] = useState(false);
   // ── Estados novos: paradas, pré-cadastro, perfil ──
   const [paradas, setParadas] = useState([]);
+  const [ajudantesIds, setAjudantesIds] = useState([]);
   const [showPreMot, setShowPreMot] = useState(false);
   const [showPreVei, setShowPreVei] = useState(false);
   const { data: transportadoras } = useFetch('/transportadoras');
@@ -302,6 +317,8 @@ export default function Ordens() {
         data: ordemExistente.data?.substring(0,10) || today,
         numero_rota: ordemExistente.numero_rota || '',
         tipo_frota: ordemExistente.tipo_frota || '',
+        tipo_frete: ordemExistente.tipo_frete || '',
+        multiplicador_frete: ordemExistente.multiplicador_frete || 1,
         quant_entregas: ordemExistente.quant_entregas || '',
         cliente_id: ordemExistente.cliente_id || '',
         cliente_nome: ordemExistente.cliente_nome || '',
@@ -322,10 +339,16 @@ export default function Ordens() {
         const ps = await api.get(`/ordens/${ordemExistente.id}/paradas`);
         setParadas(ps || []);
       } catch { setParadas([]); }
+      // Carregar ajudantes
+      try {
+        const ajus = await api.get(`/ordens/${ordemExistente.id}/ajudantes`);
+        setAjudantesIds((ajus || []).map(a => a.motorista_id));
+      } catch { setAjudantesIds([]); }
     } else {
       setEditingId(null);
-      setForm({ data: today, tipo_frota: '' });
+      setForm({ data: today, tipo_frota: '', multiplicador_frete: 1 });
       setParadas([]);
+      setAjudantesIds([]);
     }
     setAnexo(null);
     setFormError('');
@@ -678,6 +701,60 @@ export default function Ordens() {
                     </button>
                   </div>
                 </Field>
+
+                {/* Tipo de Frete + Multiplicador (define cálculo CAR/CAP) */}
+                <div className="form-grid cols-2">
+                  <Field label={<span>Tipo de Frete <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(usa do veículo, mas pode mudar)</span></span>}>
+                    <Select value={form.tipo_frete||''} onChange={e=>set('tipo_frete',e.target.value)}
+                      options={[
+                        {value:'',label:'— Selecione —'},
+                        ...['HR','IVECO','3/4','TOCO','TRUCK','MASTER'].map(v=>({value:v,label:v})),
+                      ]} />
+                  </Field>
+                  <Field label={<span>Multiplicador <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(ex: 2 = paga/recebe 2× o frete)</span></span>}>
+                    <Input type="number" min={1} max={9} step={1}
+                      value={form.multiplicador_frete||1}
+                      onChange={e=>set('multiplicador_frete', Math.max(1, Math.min(9, parseInt(e.target.value,10) || 1)))}
+                      disabled={ehMotorista && !editingId}
+                      title={ehMotorista ? 'Editável durante a viagem' : ''}
+                    />
+                  </Field>
+                </div>
+
+                {/* Ajudantes (multi-select de colaboradores tipo ajudante) — só admin/supervisor */}
+                {!ehMotorista && (
+                  <Field label={<span>Ajudantes <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(opcional, múltiplos)</span></span>}>
+                    <div style={{border:'1px solid var(--border)',borderRadius:'var(--radius)',padding:8,minHeight:42,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
+                      {ajudantesIds.map(aId => {
+                        const a = (ajudantesDisp||[]).find(x=>String(x.id)===String(aId));
+                        return (
+                          <span key={aId} style={{display:'inline-flex',alignItems:'center',gap:4,background:'var(--accent-lt)',color:'var(--accent)',padding:'3px 8px',borderRadius:12,fontSize:12}}>
+                            👷 {a?.nome || aId}
+                            <button type="button" onClick={()=>setAjudantesIds(prev=>prev.filter(x=>String(x)!==String(aId)))}
+                              style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:14,padding:0,lineHeight:1}}>×</button>
+                          </span>
+                        );
+                      })}
+                      <Select value="" onChange={e=>{
+                          if (e.target.value && !ajudantesIds.some(x=>String(x)===String(e.target.value))) {
+                            setAjudantesIds(prev=>[...prev, e.target.value]);
+                          }
+                        }}
+                        style={{flex:1,minWidth:140,border:'none',background:'transparent',padding:0}}
+                        options={[
+                          {value:'',label:ajudantesIds.length ? '+ Adicionar ajudante' : '— Selecione —'},
+                          ...(ajudantesDisp||[])
+                            .filter(a => !ajudantesIds.some(x=>String(x)===String(a.id)))
+                            .map(a => ({value:a.id, label:a.nome})),
+                        ]} />
+                    </div>
+                    {(ajudantesDisp||[]).length === 0 && (
+                      <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                        Nenhum colaborador tipo "Ajudante" cadastrado. Cadastre em Colaboradores.
+                      </div>
+                    )}
+                  </Field>
+                )}
 
                 {/* Região - full width */}
                 <Field label={<span>Região <span style={{color:'var(--text3)',fontSize:10,fontWeight:400}}>(define frete)</span></span>}>

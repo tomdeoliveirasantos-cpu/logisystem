@@ -39,7 +39,7 @@ export default function PreCadastroModal({
     } else {
       if (!form.placa?.trim()) { setErro('Placa é obrigatória'); return; }
       if (!form.tipo) { setErro('Tipo é obrigatório'); return; }
-      if (!form.ag_ft) { setErro('Frota (Agregado/Próprio) é obrigatória'); return; }
+      if (!form.ag_ft) { setErro('Frota (Próprio/Terceiro) é obrigatória'); return; }
     }
 
     setSalvando(true);
@@ -103,7 +103,7 @@ export default function PreCadastroModal({
                   onChange={e => setForm({ ...form, ag_ft: e.target.value })}
                   options={[
                     { value: 'frota', label: '🏠 Próprio' },
-                    { value: 'agregado', label: '🚛 Agregado' },
+                    { value: 'terceiro', label: '🚚 Terceiro' },
                   ]}
                   autoFocus
                 />
@@ -131,7 +131,7 @@ export default function PreCadastroModal({
                   ]}
                 />
               </Field>
-              {form.ag_ft === 'agregado' && (
+              {form.ag_ft === 'terceiro' && (
                 <Field label="Transportadora">
                   <Select
                     value={form.transportadora_id || ''}

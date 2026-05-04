@@ -101,10 +101,10 @@ function TabReceber() {
   );
 }
 
-// ════ Aba PAGAR (tabela agregado por região/veículo) ═════════════════════════
+// ════ Aba PAGAR (tabela terceiro por região/veículo) ═════════════════════════
 function TabPagar() {
   const [subTab, setSubTab] = useState('sp');
-  const { data, loading, refetch } = useFetch(`/financeiro/fretes?tipo_frete=agregado&sub_tabela=${subTab}`, [subTab]);
+  const { data, loading, refetch } = useFetch(`/financeiro/fretes?tipo_frete=terceiro&sub_tabela=${subTab}`, [subTab]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
@@ -140,7 +140,7 @@ function TabPagar() {
   const open = (row = null) => {
     setEditing(row);
     setForm(row ? { ...row } : {
-      tipo_frete: 'agregado', tipo_veiculo: 'HR', valor_base: '', regiao: '',
+      tipo_frete: 'terceiro', tipo_veiculo: 'HR', valor_base: '', regiao: '',
       sub_tabela: subTab, km_max: '',
     });
     setModal(true);
@@ -168,7 +168,7 @@ function TabPagar() {
   return (
     <div>
       <div style={{ padding: '12px 16px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13, color: '#B45309' }}>
-        <strong>Frete pago aos agregados</strong> — Valor variável por região e tipo de veículo.
+        <strong>Frete pago aos terceiros</strong> — Valor variável por região e tipo de veículo.
       </div>
 
       {/* Sub-tabs */}
@@ -227,7 +227,7 @@ function TabPagar() {
                         <button className="btn btn-ghost btn-sm" onClick={() => {
                           const item = items[0];
                           if (item) open(item);
-                          else open({ tipo_veiculo: veiculo, sub_tabela: 'sorocaba', tipo_frete: 'agregado' });
+                          else open({ tipo_veiculo: veiculo, sub_tabela: 'sorocaba', tipo_frete: 'terceiro' });
                         }}>Editar</button>
                       </td>
                     </tr>
@@ -237,7 +237,7 @@ function TabPagar() {
             </table>
           </div>
           <div style={{ padding: '10px 14px', fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
-            * Regra de km baseada no romaneio + retorno da última entrega para o CD. Pedágio por conta do agregado.
+            * Regra de km baseada no romaneio + retorno da última entrega para o CD. Pedágio por conta do terceiro.
           </div>
         </div>
       ) : (
@@ -286,7 +286,7 @@ function TabPagar() {
           </div>
           {(subTab === 'campinas1' || subTab === 'campinas2') && (
             <div style={{ padding: '10px 14px', fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
-              * Pedágio por conta do agregado.
+              * Pedágio por conta do terceiro.
             </div>
           )}
         </div>
@@ -351,7 +351,7 @@ export default function TabelaFretes() {
       <div className="page-header">
         <div>
           <div className="page-title">Tabela de Fretes</div>
-          <div className="page-desc">Valores de referência para frete recebido e pago aos agregados</div>
+          <div className="page-desc">Valores de referência para frete recebido e pago aos terceiros</div>
         </div>
       </div>
 
@@ -385,7 +385,7 @@ export default function TabelaFretes() {
               marginBottom: -2, transition: 'all .15s',
             }}
           >
-            🚚 Frete Agregado (Pagar)
+            🚚 Frete Terceiro (Pagar)
           </button>
         </div>
 

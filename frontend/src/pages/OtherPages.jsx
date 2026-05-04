@@ -56,7 +56,7 @@ export function ContasReceber() {
 }
 
 const TIPO_LANCAMENTO_LABEL = {
-  frete_agregado:   { label: 'Frete Agregado', badge: 'badge-blue' },
+  frete_terceiro:   { label: 'Frete Terceiro', badge: 'badge-blue' },
   diaria_motorista: { label: 'Diária Motorista', badge: 'badge-teal' },
   diaria_ajudante:  { label: 'Diária Ajudante', badge: 'badge-amber' },
 };
@@ -80,11 +80,11 @@ export function ContasPagar() {
   return (
     <div>
       <div className="page-header">
-        <div><div className="page-title">Contas a Pagar</div><div className="page-desc">Fretes agregados e diárias da frota própria</div></div>
+        <div><div className="page-title">Contas a Pagar</div><div className="page-desc">Fretes de terceiros e diárias da frota própria</div></div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           <select className="form-select" style={{width:190}} value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}>
             <option value="">Todos os tipos</option>
-            <option value="frete_agregado">Frete Agregado</option>
+            <option value="frete_terceiro">Frete Terceiro</option>
             <option value="diaria_motorista">Diária Motorista</option>
             <option value="diaria_ajudante">Diária Ajudante</option>
           </select>
@@ -272,7 +272,7 @@ export function Veiculos() {
   const rows=data||[];
   return (
     <div>
-      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e agregados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="veiculos" columns={[
+      <div className="page-header"><div><div className="page-title">Frota / Veículos</div><div className="page-desc">Caminhões próprios e terceirizados</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="veiculos" columns={[
             {key:'placa',label:'Placa'},{key:'tipo',label:'Tipo'},{key:'modelo',label:'Modelo'},
             {key:'ano',label:'Ano'},{key:'renavam',label:'RENAVAM'},{key:'transportadora_nome',label:'Transportadora'},
             {key:'ag_ft',label:'Ag/Frota'},{key:'proprietario',label:'Proprietário'},
@@ -309,7 +309,7 @@ export function Veiculos() {
               {/* 1. Frota */}
               <Field label="Frota *">
                 <Select value={form.ag_ft||''} onChange={e=>set('ag_ft',e.target.value)}
-                  options={[{value:'frota',label:'🏠 Próprio'},{value:'agregado',label:'🚛 Agregado'}]}/>
+                  options={[{value:'frota',label:'🏠 Próprio'},{value:'terceiro',label:'🚚 Terceiro'}]}/>
               </Field>
               {/* 2. Placa */}
               <Field label="Placa *">
@@ -443,7 +443,7 @@ export function Motoristas() {
             const proxVenc = venc && (venc - new Date()) < (60*86400000); // 60 dias
             const tipoLabels = {
               motorista_proprio:'🏠 Motorista Próprio',
-              motorista_agregado:'🚛 Motorista Agregado',
+              motorista_terceiro:'🚚 Motorista Terceiro',
               ajudante:'👷 Ajudante',
               administrativo:'💼 Administrativo',
               pendente:'⏳ Pendente',
@@ -485,7 +485,7 @@ export function Motoristas() {
                   <Select value={form.tipo_colaborador||''} onChange={e=>set('tipo_colaborador',e.target.value)}
                     options={[
                       {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
-                      {value:'motorista_agregado',label:'🚛 Motorista Agregado'},
+                      {value:'motorista_terceiro',label:'🚚 Motorista Terceiro'},
                       {value:'ajudante',label:'👷 Ajudante'},
                       {value:'administrativo',label:'💼 Administrativo'},
                       {value:'pendente',label:'⏳ Pendente (admin classificará)'},

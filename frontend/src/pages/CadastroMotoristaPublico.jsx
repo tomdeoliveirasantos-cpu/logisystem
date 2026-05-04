@@ -229,7 +229,7 @@ export default function CadastroMotoristaPublico() {
                   onChange={e=>set('tipo_colaborador', e.target.value)}>
                   <option value="">— Selecione —</option>
                   <option value="motorista_proprio">🏠 Motorista Próprio</option>
-                  <option value="motorista_agregado">🚛 Motorista Agregado</option>
+                  <option value="motorista_terceiro">🚚 Motorista Terceiro</option>
                   <option value="ajudante">👷 Ajudante</option>
                   <option value="administrativo">💼 Administrativo</option>
                 </select>

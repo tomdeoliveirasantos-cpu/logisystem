@@ -149,10 +149,10 @@ async function regenerarFinanceiroOT(client, ordemId) {
 
   // CAP — depende de tipo_frota
   const tipoFrota = ot.tipo_frota ||
-    (ot.ag_ft === 'frota' ? 'proprio' : ot.ag_ft === 'agregado' ? 'agregado' : 'terceiro');
+    (ot.ag_ft === 'frota' ? 'proprio' : 'terceiro');
 
-  if (tipoFrota === 'agregado' && ot.veiculo_id) {
-    // Frete pago à transportadora (tipo_frete × multiplicador)
+  if (tipoFrota === 'terceiro' && ot.veiculo_id) {
+    // Frete pago a terceiro (tipo_frete × multiplicador)
     try {
       const { rows: tf } = await client.query(
         `SELECT valor_base FROM logi_tabela_fretes
@@ -169,11 +169,11 @@ async function regenerarFinanceiroOT(client, ordemId) {
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [ordemId, ot.transportadora_id, ot.motorista_id,
            valorTotal, ot.data,
-           `Frete agregado - ${ot.transportadora_nome || ''} - ${tipoFreteEfetivo}${sufMult} - Rota ${ot.numero_rota || ordemId}`,
-           'frete_agregado']
+           `Frete terceiro - ${ot.transportadora_nome || ''} - ${tipoFreteEfetivo}${sufMult} - Rota ${ot.numero_rota || ordemId}`,
+           'frete_terceiro']
         );
       }
-    } catch (e) { console.error('CAP agregado:', e.message); }
+    } catch (e) { console.error('CAP terceiro:', e.message); }
   } else if (tipoFrota === 'proprio' && ot.motorista_id) {
     // Diária do motorista (frota própria) com multiplicador
     try {
@@ -369,7 +369,7 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
   try {
     const {
       cliente_id, motorista_id, veiculo_id, data, numero_rota,
-      tipo_frota,                          // 'proprio' | 'agregado' | 'terceiro'
+      tipo_frota,                          // 'proprio' | 'terceiro'
       tipo_frete,                          // HR/IVECO/3-4/TOCO/TRUCK/MASTER (default = veiculo.tipo)
       multiplicador_frete = 1,             // 1-9
       quant_entregas,                      // estimativa
@@ -970,7 +970,7 @@ router.post('/agrupar', async (req, res, next) => {
 
     await db.query(
       `UPDATE logi_contas_pagar SET status = 'cancelado'
-       WHERE ordem_id = ANY($1) AND status = 'pendente' AND tipo_lancamento = 'frete_agregado'`,
+       WHERE ordem_id = ANY($1) AND status = 'pendente' AND tipo_lancamento = 'frete_terceiro'`,
       [ordem_ids]
     );
 
@@ -989,7 +989,7 @@ router.post('/agrupar', async (req, res, next) => {
         await db.query(
           `INSERT INTO logi_contas_pagar
             (ordem_id, tabela_frete_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento, grupo_viagem)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'frete_agregado', $8)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'frete_terceiro', $8)`,
           [ordem_ids[0], tabela_frete_id, veiculo.transportadora_id || null,
            motorista_id || null, fr[0].valor_base, ordens[0].data,
            `Frete agrupado (${grupoId}) - Rotas ${rotas}`, grupoId]

@@ -139,7 +139,7 @@ export default function Transportadoras() {
             </Field>
             <Field label="Tipo de transporte *">
               <Select value={form.tipo} onChange={e => set('tipo', e.target.value)}
-                options={[{ value: 'proprio', label: 'Próprio' }, { value: 'terceiros', label: 'Terceiros / Agregado' }]} />
+                options={[{ value: 'proprio', label: 'Próprio' }, { value: 'terceiros', label: 'Terceiros' }]} />
             </Field>
             <Field label="Telefone de contato">
               <Input value={form.telefone_contato} onChange={e => set('telefone_contato', e.target.value)} placeholder="(11) 99999-0000" />

@@ -177,7 +177,7 @@ router.delete('/fretes/:id', async (req, res, next) => {
 
 // ════ BUSCAR VALOR DE FRETE AUTOMÁTICO ═══════════════════════════════════════
 // GET /api/financeiro/fretes/buscar?regiao=X&tipo_veiculo=Y
-// Retorna o valor da tabela agregado + o valor fixo recebido para o veículo
+// Retorna o valor da tabela terceiro + o valor fixo recebido para o veículo
 router.get('/fretes/buscar', async (req, res, next) => {
   try {
     const { regiao, tipo_veiculo } = req.query;
@@ -185,10 +185,10 @@ router.get('/fretes/buscar', async (req, res, next) => {
       return res.status(400).json({ error: 'regiao e tipo_veiculo são obrigatórios' });
     }
 
-    // Buscar frete agregado (pagar) pela região + veículo
-    const { rows: agregado } = await db.query(
+    // Buscar frete terceiro (pagar) pela região + veículo
+    const { rows: terceiro } = await db.query(
       `SELECT * FROM logi_tabela_fretes
-       WHERE tipo_frete='agregado' AND sub_tabela='sp'
+       WHERE tipo_frete='terceiro' AND sub_tabela='sp'
          AND UPPER(TRIM(regiao)) = UPPER(TRIM($1))
          AND UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($2))
        LIMIT 1`,
@@ -204,7 +204,7 @@ router.get('/fretes/buscar', async (req, res, next) => {
     );
 
     res.json({
-      pagar: agregado[0] || null,
+      pagar: terceiro[0] || null,
       receber: recebido[0] || null,
     });
   } catch (err) { next(err); }
@@ -215,7 +215,7 @@ router.get('/fretes/regioes', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT DISTINCT regiao FROM logi_tabela_fretes
-       WHERE tipo_frete='agregado' AND sub_tabela='sp'
+       WHERE tipo_frete='terceiro' AND sub_tabela='sp'
        ORDER BY regiao`
     );
     res.json(rows.map(r => r.regiao));

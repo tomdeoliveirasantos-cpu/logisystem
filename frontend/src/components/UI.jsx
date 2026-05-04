@@ -16,7 +16,7 @@ export function StatusBadge({ status }) {
     proprio:   { type: 'teal',  label: 'Próprio' },
     terceiros: { type: 'blue',  label: 'Terceiros' },
     frota:     { type: 'teal',  label: 'Frota' },
-    agregado:  { type: 'blue',  label: 'Agregado' },
+    terceiro:  { type: 'blue',  label: 'Terceiro' },
     preventiva:{ type: 'blue',  label: 'Preventiva' },
     corretiva: { type: 'amber', label: 'Corretiva' },
   };

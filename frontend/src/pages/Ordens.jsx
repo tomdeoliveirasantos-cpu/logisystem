@@ -113,20 +113,20 @@ function FreteResumo({ veiculo, regiao, freteData, loading, temAjudante, valorAj
             </div>
           </div>
           <div style={{ padding: '10px 12px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 'var(--radius)' }}>
-            <div style={{ fontSize: 10, color: '#B45309', fontWeight: 600, marginBottom: 4 }}>PAGAR (Agregado)</div>
+            <div style={{ fontSize: 10, color: '#B45309', fontWeight: 600, marginBottom: 4 }}>PAGAR (Terceiro)</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#B45309' }}>
               {totalPagar > 0 ? fmt(totalPagar) : '—'}
             </div>
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
               {regiao && valorPagar > 0 && `Frete: ${fmt(valorPagar)}`}
               {regiao && valorPagar > 0 && ajudante > 0 && ` + Ajud: ${fmt(ajudante)}`}
-              {!regiao && veiculo.ag_ft === 'agregado' && 'Selecione a região'}
+              {!regiao && veiculo.ag_ft === 'terceiro' && 'Selecione a região'}
               {veiculo.ag_ft === 'frota' && 'Frota própria'}
             </div>
           </div>
         </div>
       )}
-      {!regiao && veiculo.ag_ft === 'agregado' && (
+      {!regiao && veiculo.ag_ft === 'terceiro' && (
         <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', fontStyle: 'italic' }}>
           Preencha a região para calcular o frete a pagar.
         </div>
@@ -691,7 +691,7 @@ export default function Ordens() {
                   <div style={{display:'flex',gap:6}}>
                     <div style={{flex:1}}>
                       <Select value={form.veiculo_id||''} onChange={e=>set('veiculo_id',e.target.value)}
-                        options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚛 Agregado'}${v.status_cadastro==='pendente_admin'?' ⚠️':''}`}))} />
+                        options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==='frota'?'🏠 Frota':'🚚 Terceiro'}${v.status_cadastro==='pendente_admin'?' ⚠️':''}`}))} />
                     </div>
                     <button type="button" className="btn btn-ghost" onClick={()=>setShowPreVei(true)}
                       style={{padding:'6px 12px',whiteSpace:'nowrap'}} title="Pré-cadastro rápido">
@@ -903,7 +903,7 @@ export default function Ordens() {
             <div className="modal-body">
               <div style={{padding:"12px 16px",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:"var(--radius)",marginBottom:16,fontSize:13}}>
                 <strong>{selectedIds.length} ordens</strong> serão agrupadas numa única viagem.
-                <br/><span style={{fontSize:11,color:"#6B21A8"}}>O sistema vai cancelar os fretes individuais e gerar 1 frete único pro agregado.</span>
+                <br/><span style={{fontSize:11,color:"#6B21A8"}}>O sistema vai cancelar os fretes individuais e gerar 1 frete único pro terceiro.</span>
               </div>
               <Field label="Motorista (opcional — altera todas)">
                 <Select value={agrupForm.motorista_id||""} onChange={e=>{
@@ -915,7 +915,7 @@ export default function Ordens() {
               <div style={{marginTop:12}}>
                 <Field label="Veículo (define o frete único)">
                   <Select value={agrupForm.veiculo_id||""} onChange={e=>setAgrupForm(f=>({...f,veiculo_id:e.target.value}))}
-                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==="frota"?"🏠 Frota":"🚛 Agregado"}`}))} />
+                    options={(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo} — ${v.ag_ft==="frota"?"🏠 Frota":"🚚 Terceiro"}`}))} />
                 </Field>
               </div>
             </div>

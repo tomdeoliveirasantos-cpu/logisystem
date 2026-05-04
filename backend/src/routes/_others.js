@@ -35,7 +35,7 @@ motoristasRouter.get('/', async (req, res, next) => {
     const where = ['mo.ativo = true'];
     if (status_cadastro) { params.push(status_cadastro); where.push(`mo.status_cadastro = $${params.length}`); }
     if (tipo_colaborador) {
-      // aceita CSV: ?tipo_colaborador=motorista_proprio,motorista_agregado
+      // aceita CSV: ?tipo_colaborador=motorista_proprio,motorista_terceiro
       const tipos = String(tipo_colaborador).split(',').map(s => s.trim()).filter(Boolean);
       if (tipos.length) {
         const start = params.length;

@@ -186,7 +186,7 @@ router.get('/fechamento-mensal', async (req, res, next) => {
            SUM(CASE WHEN status='pendente' THEN valor ELSE 0 END) AS em_aberto,
            SUM(CASE WHEN status='pago' THEN valor ELSE 0 END) AS pago,
            SUM(CASE WHEN status='cancelado' THEN valor ELSE 0 END) AS cancelado,
-           SUM(CASE WHEN tipo_lancamento='frete_agregado' THEN valor ELSE 0 END) AS frete_agregado,
+           SUM(CASE WHEN tipo_lancamento='frete_terceiro' THEN valor ELSE 0 END) AS frete_terceiro,
            SUM(CASE WHEN tipo_lancamento='diaria_motorista' THEN valor ELSE 0 END) AS diaria_motorista,
            SUM(CASE WHEN tipo_lancamento='diaria_ajudante' THEN valor ELSE 0 END) AS diaria_ajudante
          FROM logi_contas_pagar WHERE vencimento::text LIKE $1`, [like]

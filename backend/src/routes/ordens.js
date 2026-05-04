@@ -122,20 +122,26 @@ async function regenerarFinanceiroOT(client, ordemId) {
      WHERE ordem_id=$1 AND status='pendente'`, [ordemId]
   );
 
-  // CAR — frete recebido (1 por OT, baseado em tipo de veículo)
-  if (ot.veiculo_id && ot.veiculo_tipo) {
+  // Tipo efetivo do frete: campo OT.tipo_frete tem precedência sobre veiculo.tipo
+  const tipoFreteEfetivo = ot.tipo_frete || ot.veiculo_tipo;
+  const mult = Math.max(1, parseInt(ot.multiplicador_frete, 10) || 1);
+
+  // CAR — frete recebido (1 por OT, baseado em tipo_frete × multiplicador)
+  if (tipoFreteEfetivo) {
     try {
       const { rows: fr } = await client.query(
         `SELECT valor FROM logi_tabela_frete_recebido
          WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))`,
-        [ot.veiculo_tipo]
+        [tipoFreteEfetivo]
       );
       if (fr.length && fr[0].valor) {
+        const valorTotal = parseFloat(fr[0].valor) * mult;
+        const sufMult = mult > 1 ? ` (${mult}x)` : '';
         await client.query(
           `INSERT INTO logi_contas_receber (ordem_id, cliente, valor, vencimento, obs)
            VALUES ($1, $2, $3, $4, $5)`,
-          [ordemId, 'Léo Madeiras', fr[0].valor, ot.data,
-           `Frete recebido - ${ot.veiculo_tipo} - Rota ${ot.numero_rota || ordemId}`]
+          [ordemId, 'Léo Madeiras', valorTotal, ot.data,
+           `Frete recebido - ${tipoFreteEfetivo}${sufMult} - Rota ${ot.numero_rota || ordemId}`]
         );
       }
     } catch (e) { console.error('CAR:', e.message); }
@@ -146,49 +152,53 @@ async function regenerarFinanceiroOT(client, ordemId) {
     (ot.ag_ft === 'frota' ? 'proprio' : ot.ag_ft === 'agregado' ? 'agregado' : 'terceiro');
 
   if (tipoFrota === 'agregado' && ot.veiculo_id) {
-    // Frete pago à transportadora
+    // Frete pago à transportadora (tipo_frete × multiplicador)
     try {
       const { rows: tf } = await client.query(
         `SELECT valor_base FROM logi_tabela_fretes
          WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))
          ORDER BY id DESC LIMIT 1`,
-        [ot.veiculo_tipo || '']
+        [tipoFreteEfetivo || '']
       );
       if (tf.length && tf[0].valor_base) {
+        const valorTotal = parseFloat(tf[0].valor_base) * mult;
+        const sufMult = mult > 1 ? ` (${mult}x)` : '';
         await client.query(
           `INSERT INTO logi_contas_pagar
             (ordem_id, transportadora_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [ordemId, ot.transportadora_id, ot.motorista_id,
-           tf[0].valor_base, ot.data,
-           `Frete agregado - ${ot.transportadora_nome || ''} - Rota ${ot.numero_rota || ordemId}`,
+           valorTotal, ot.data,
+           `Frete agregado - ${ot.transportadora_nome || ''} - ${tipoFreteEfetivo}${sufMult} - Rota ${ot.numero_rota || ordemId}`,
            'frete_agregado']
         );
       }
     } catch (e) { console.error('CAP agregado:', e.message); }
   } else if (tipoFrota === 'proprio' && ot.motorista_id) {
-    // Diária do motorista (frota própria)
+    // Diária do motorista (frota própria) com multiplicador
     try {
       const { rows: tf } = await client.query(
         `SELECT valor_base FROM logi_tabela_fretes
          WHERE UPPER(TRIM(tipo_veiculo)) = UPPER(TRIM($1))
          ORDER BY id DESC LIMIT 1`,
-        [ot.veiculo_tipo || '']
+        [tipoFreteEfetivo || '']
       );
       if (tf.length && tf[0].valor_base) {
+        const valorTotal = parseFloat(tf[0].valor_base) * mult;
+        const sufMult = mult > 1 ? ` (${mult}x)` : '';
         await client.query(
           `INSERT INTO logi_contas_pagar
             (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [ordemId, ot.motorista_id, tf[0].valor_base, ot.data,
-           `Diária motorista - Rota ${ot.numero_rota || ordemId}`, 'diaria_motorista']
+          [ordemId, ot.motorista_id, valorTotal, ot.data,
+           `Diária motorista - ${tipoFreteEfetivo}${sufMult} - Rota ${ot.numero_rota || ordemId}`, 'diaria_motorista']
         );
       }
     } catch (e) { console.error('CAP proprio:', e.message); }
   }
   // Terceiro: sem CAP automático (pago externamente)
 
-  // Ajudante extra (R$ direto da OT, se preenchido)
+  // Ajudante extra (R$ direto da OT, se preenchido) — compat com campo único
   const ajuExtra = parseFloat(ot.ajudante_extra) || 0;
   if (ajuExtra > 0) {
     await client.query(
@@ -199,6 +209,35 @@ async function regenerarFinanceiroOT(client, ordemId) {
        `Ajudante Extra - Rota ${ot.numero_rota || ordemId}`, 'diaria_ajudante']
     );
   }
+
+  // Ajudantes vinculados (N-pra-N): 1 CAP por ajudante
+  try {
+    const { rows: ajuRows } = await client.query(
+      `SELECT oa.motorista_id, oa.valor, m.nome AS ajudante_nome
+       FROM logi_ordem_ajudantes oa
+       LEFT JOIN logi_motoristas m ON m.id = oa.motorista_id
+       WHERE oa.ordem_id = $1`, [ordemId]
+    );
+    // Valor padrão de ajudante (parametrizado)
+    let valorPadraoAju = 0;
+    const { rows: paramRows } = await client.query(
+      "SELECT valor FROM logi_parametros WHERE chave = 'valor_ajudante'"
+    );
+    if (paramRows.length) valorPadraoAju = parseFloat(paramRows[0].valor) || 0;
+
+    for (const a of ajuRows) {
+      const valorAju = (parseFloat(a.valor) > 0 ? parseFloat(a.valor) : valorPadraoAju);
+      if (valorAju > 0) {
+        await client.query(
+          `INSERT INTO logi_contas_pagar
+            (ordem_id, motorista_id, valor, vencimento, descricao, tipo_lancamento)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [ordemId, a.motorista_id, valorAju, ot.data,
+           `Ajudante ${a.ajudante_nome || ''} - Rota ${ot.numero_rota || ordemId}`, 'diaria_ajudante']
+        );
+      }
+    }
+  } catch (e) { console.error('CAP ajudantes:', e.message); }
 
   // Ajuda diesel (R$ direto da OT, se preenchido)
   const ajuDiesel = parseFloat(ot.ajuda_diesel) || 0;
@@ -297,6 +336,14 @@ router.get('/:id', async (req, res, next) => {
 
     const ot = rows[0];
     ot.paradas = await carregarParadas(ot.id);
+    // Carregar ajudantes vinculados
+    const { rows: ajus } = await db.query(
+      `SELECT oa.motorista_id, oa.valor, m.nome AS ajudante_nome
+       FROM logi_ordem_ajudantes oa
+       LEFT JOIN logi_motoristas m ON m.id = oa.motorista_id
+       WHERE oa.ordem_id = $1`, [ot.id]
+    );
+    ot.ajudantes = ajus;
     res.json(ot);
   } catch (err) { next(err); }
 });
@@ -323,6 +370,8 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
     const {
       cliente_id, motorista_id, veiculo_id, data, numero_rota,
       tipo_frota,                          // 'proprio' | 'agregado' | 'terceiro'
+      tipo_frete,                          // HR/IVECO/3-4/TOCO/TRUCK/MASTER (default = veiculo.tipo)
+      multiplicador_frete = 1,             // 1-9
       quant_entregas,                      // estimativa
       saida, regiao,
       status='pendente', tipo, pagto,
@@ -330,12 +379,18 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
       n_cont, q_capas=0, obs,
       km_saida, km_chegada,
       paradas,                             // array opcional
+      ajudantes,                           // array de motorista_id (opcional)
     } = req.body;
 
     // paradas pode vir como JSON string (multer/multipart)
     let paradasArr = [];
     if (paradas) {
       paradasArr = typeof paradas === 'string' ? JSON.parse(paradas) : paradas;
+    }
+    // ajudantes idem
+    let ajudantesArr = [];
+    if (ajudantes) {
+      ajudantesArr = typeof ajudantes === 'string' ? JSON.parse(ajudantes) : ajudantes;
     }
 
     const anexo_nome = req.file ? req.file.originalname : null;
@@ -347,15 +402,16 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
     const { rows } = await client.query(
       `INSERT INTO logi_ordens_transporte
         (cliente_id,motorista_id,veiculo_id,data,numero_rota,
-         tipo_frota,quant_entregas,saida,regiao,status,tipo,pagto,
+         tipo_frota,tipo_frete,multiplicador_frete,quant_entregas,saida,regiao,status,tipo,pagto,
          ajuda_diesel,taxa_descarga,ajudante_extra,
          n_cont,q_capas,obs,
          anexo_nome,anexo_path,anexo_tamanho,
          km_saida,km_chegada)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
        RETURNING *`,
       [cliente_id||null, motorista_id||null, veiculo_id||null, data,
-       numero_rota||null, tipo_frota||null, quant_entregas||null,
+       numero_rota||null, tipo_frota||null, tipo_frete||null, parseInt(multiplicador_frete,10)||1,
+       quant_entregas||null,
        saida||null, regiao||null, status, tipo||null, pagto||null,
        ajuda_diesel||0, taxa_descarga||0, ajudante_extra||0,
        n_cont||null, q_capas||0, obs||null,
@@ -368,6 +424,22 @@ router.post('/', upload.single('anexo'), async (req, res, next) => {
     // Inserir paradas se vieram
     if (paradasArr.length) {
       await substituirParadas(client, ordem.id, paradasArr);
+    }
+
+    // Inserir ajudantes (N-pra-N)
+    if (ajudantesArr.length) {
+      for (const a of ajudantesArr) {
+        const motId = typeof a === 'object' ? a.motorista_id : a;
+        const valor = typeof a === 'object' ? a.valor : null;
+        if (motId) {
+          await client.query(
+            `INSERT INTO logi_ordem_ajudantes (ordem_id, motorista_id, valor)
+             VALUES ($1,$2,$3)
+             ON CONFLICT (ordem_id, motorista_id) DO UPDATE SET valor=EXCLUDED.valor`,
+            [ordem.id, motId, valor]
+          );
+        }
+      }
     }
 
     // Gerar CAP/CAR consolidado
@@ -391,17 +463,23 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
   try {
     const {
       cliente_id, motorista_id, veiculo_id, data, numero_rota,
-      tipo_frota, quant_entregas,
+      tipo_frota, tipo_frete, multiplicador_frete, quant_entregas,
       saida, regiao, tipo, pagto,
       ajuda_diesel, taxa_descarga, ajudante_extra,
       n_cont, q_capas, obs,
       km_saida, km_chegada,
       paradas,
+      ajudantes,                           // array de motorista_id ou {motorista_id, valor}
     } = req.body;
 
     let paradasArr = null;
     if (paradas !== undefined) {
       paradasArr = typeof paradas === 'string' ? JSON.parse(paradas) : paradas;
+    }
+
+    let ajudantesArr = null;
+    if (ajudantes !== undefined) {
+      ajudantesArr = typeof ajudantes === 'string' ? JSON.parse(ajudantes) : ajudantes;
     }
 
     const anexo_nome = req.file ? req.file.originalname : undefined;
@@ -426,6 +504,10 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
     add('data', data);
     add('numero_rota', numero_rota);
     add('tipo_frota', tipo_frota);
+    add('tipo_frete', tipo_frete);
+    if (multiplicador_frete !== undefined) {
+      add('multiplicador_frete', Math.max(1, Math.min(9, parseInt(multiplicador_frete, 10) || 1)));
+    }
     add('quant_entregas', quant_entregas);
     add('saida', saida);
     add('regiao', regiao);
@@ -445,7 +527,7 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
       add('anexo_tamanho', anexo_size);
     }
 
-    if (!sets.length && paradasArr === null) {
+    if (!sets.length && paradasArr === null && ajudantesArr === null) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
@@ -468,7 +550,25 @@ router.put('/:id', upload.single('anexo'), async (req, res, next) => {
       await substituirParadas(client, req.params.id, paradasArr);
     }
 
-    // Regenerar financeiro (campos monetários ou paradas podem ter mudado)
+    // Substituir ajudantes (apaga todos e reinsere)
+    if (ajudantesArr !== null) {
+      await client.query(
+        `DELETE FROM logi_ordem_ajudantes WHERE ordem_id = $1`, [req.params.id]
+      );
+      for (const a of ajudantesArr) {
+        const motId = typeof a === 'object' ? a.motorista_id : a;
+        const valor = typeof a === 'object' ? a.valor : null;
+        if (motId) {
+          await client.query(
+            `INSERT INTO logi_ordem_ajudantes (ordem_id, motorista_id, valor)
+             VALUES ($1,$2,$3)`,
+            [req.params.id, motId, valor]
+          );
+        }
+      }
+    }
+
+    // Regenerar financeiro
     await regenerarFinanceiroOT(client, req.params.id);
 
     await client.query('COMMIT');
@@ -552,6 +652,67 @@ router.delete('/:id/paradas/:paradaId', async (req, res, next) => {
     );
     res.json({ success: true });
   } catch (err) { next(err); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// AJUDANTES (N-pra-N com colaboradores)
+// ═══════════════════════════════════════════════════════════
+
+router.get('/:id/ajudantes', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT oa.*, m.nome AS ajudante_nome, m.telefone, m.cnh
+       FROM logi_ordem_ajudantes oa
+       LEFT JOIN logi_motoristas m ON m.id = oa.motorista_id
+       WHERE oa.ordem_id = $1
+       ORDER BY m.nome`, [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/ajudantes', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const { motorista_id, valor } = req.body;
+    if (!motorista_id) return res.status(400).json({ error: 'motorista_id obrigatório' });
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO logi_ordem_ajudantes (ordem_id, motorista_id, valor)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (ordem_id, motorista_id) DO UPDATE SET valor=EXCLUDED.valor
+       RETURNING *`,
+      [req.params.id, motorista_id, valor || null]
+    );
+    await regenerarFinanceiroOT(client, req.params.id);
+    await client.query('COMMIT');
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(()=>{});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/:id/ajudantes/:motoristaId', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM logi_ordem_ajudantes WHERE ordem_id=$1 AND motorista_id=$2`,
+      [req.params.id, req.params.motoristaId]
+    );
+    await regenerarFinanceiroOT(client, req.params.id);
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(()=>{});
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════

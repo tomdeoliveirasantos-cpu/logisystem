@@ -705,7 +705,6 @@ export function Motoristas() {
   const [cnpjFile, setCnpjFile] = useState(null);
   const [comprovanteFile, setComprovanteFile] = useState(null);
   const [contratoFile, setContratoFile] = useState(null);
-  const [gerandoConvite, setGerandoConvite] = useState(false);
   const { toast, showToast } = useToast();
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const [buscandoCep, setBuscandoCep] = useState(false);
@@ -749,8 +748,8 @@ export function Motoristas() {
       contato_outro_nome:row.contato_outro_nome, contato_outro_telefone:row.contato_outro_telefone,
       status_cadastro:row.status_cadastro,
       dono_veiculo:row.dono_veiculo,
-      data_admissao: row.data_admissao?.substring(0,10) || '',
-      cnpj: row.cnpj || '',
+      data_admissao:row.data_admissao?.substring(0,10) || '',
+      cnpj:row.cnpj,
     } : {});
     setCnhFile(null);
     setCnpjFile(null);
@@ -761,30 +760,6 @@ export function Motoristas() {
   const close = () => {
     setModal(false); setEditing(null); setForm({});
     setCnhFile(null); setCnpjFile(null); setComprovanteFile(null); setContratoFile(null);
-  };
-
-  // Gera convite rápido e oferece copiar link / WhatsApp
-  const gerarConvite = async () => {
-    if (gerandoConvite) return;
-    const nome = window.prompt('Nome do motorista (opcional, para personalizar a mensagem):', '');
-    if (nome === null) return;
-    setGerandoConvite(true);
-    try {
-      const r = await api.post('/motorista-cadastros/convites/gerar', { nome_motorista: nome || null });
-      const link = `https://app.wsdevsoft.com/cadastro-motorista/${r.token}`;
-      const msgWa = nome
-        ? `Olá ${nome}! Segue o link para preencher seu cadastro de motorista:\n\n${link}`
-        : `Olá! Segue o link para preencher seu cadastro de motorista:\n\n${link}`;
-      try { await navigator.clipboard.writeText(link); } catch {}
-      if (window.confirm(`Convite gerado e link copiado!\n\nLink:\n${link}\n\nDeseja abrir o WhatsApp para enviar?`)) {
-        window.open(`https://wa.me/?text=${encodeURIComponent(msgWa)}`, '_blank');
-      }
-      showToast('Convite gerado e link copiado!');
-    } catch (e) {
-      showToast(e.message || 'Erro ao gerar convite', 'error');
-    } finally {
-      setGerandoConvite(false);
-    }
   };
 
   const save = async () => {
@@ -818,7 +793,7 @@ export function Motoristas() {
             {key:'nome',label:'Nome'},{key:'tipo_colaborador',label:'Tipo'},{key:'cnh',label:'CNH'},{key:'cnh_categoria',label:'Cat.'},
             {key:'cnh_validade',label:'Validade CNH'},{key:'telefone',label:'Telefone'},
             {key:'veiculo_padrao_placa',label:'Veículo Padrão'},{key:'transportadora_nome',label:'Transportadora'},
-          ]} /><button className="btn btn-ghost" onClick={gerarConvite} disabled={gerandoConvite} title="Gera link de convite para auto-cadastro">💬 {gerandoConvite ? 'Gerando...' : 'Gerar Convite'}</button><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Colaborador</button></div></div>
+          ]} /><button className="btn btn-ghost" onClick={()=>window.location.assign('/cadastros-motorista')} title="Gerar convite p/ motorista preencher o cadastro online">📨 Gerar Convite</button><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Colaborador</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
         <thead><tr><th>Nome</th><th>Tipo</th><th>CNH</th><th>Cat.</th><th>Validade</th><th>Telefone</th><th>Veículo</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -939,48 +914,34 @@ export function Motoristas() {
               </div>
             </div>
 
-            {/* Bloco PJ e documentos */}
-            <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Dados PJ e Documentos</div>
+            {/* Bloco documentos */}
+            <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Documentos</div>
             <div className="form-grid cols-2" style={{marginBottom:14}}>
-              <Field label="CNPJ">
-                <Input value={form.cnpj||''} onChange={e=>set('cnpj',e.target.value)} placeholder="00.000.000/0000-00"/>
+              <Field label="Comprovante de Endereço (PDF/imagem)">
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={e=>setComprovanteFile(e.target.files?.[0]||null)} style={{padding:6,fontSize:13}} />
+                {editing?.comprovante_endereco_nome && !comprovanteFile && (
+                  <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                    📎 <a href={`https://api.wsdevsoft.com/api/motoristas/${editing.id}/comprovante-endereco`} target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>{editing.comprovante_endereco_nome}</a>
+                  </div>
+                )}
               </Field>
-              <Field label="Data de Admissão">
-                <Input type="date" value={form.data_admissao||''} onChange={e=>set('data_admissao',e.target.value)}/>
+              <Field label="Cartão CNPJ (PDF/imagem)">
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={e=>setCnpjFile(e.target.files?.[0]||null)} style={{padding:6,fontSize:13}} />
+                {editing?.cnpj_arquivo_nome && !cnpjFile && (
+                  <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                    📎 <a href={`https://api.wsdevsoft.com/api/motoristas/${editing.id}/cnpj-arquivo`} target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>{editing.cnpj_arquivo_nome}</a>
+                  </div>
+                )}
               </Field>
-
               <div style={{gridColumn:'span 2'}}>
-                <Field label="Cartão CNPJ">
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{padding:6,fontSize:13}}
-                    onChange={e=>setCnpjFile(e.target.files?.[0]||null)}/>
-                  {editing?.cnpj_arquivo_nome && !cnpjFile && (
-                    <div style={{fontSize:11,marginTop:4}}>
-                      📎 <a href={`https://api.wsdevsoft.com/api/motoristas/${editing.id}/cnpj`} target="_blank" rel="noreferrer" style={{color:'#2563eb'}}>{editing.cnpj_arquivo_nome}</a>
-                      <span style={{color:'var(--text3)'}}> (clique para baixar)</span>
-                    </div>
-                  )}
-                </Field>
-              </div>
-
-              <div style={{gridColumn:'span 2'}}>
-                <Field label="Contrato Social">
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{padding:6,fontSize:13}}
-                    onChange={e=>setContratoFile(e.target.files?.[0]||null)}/>
+                <Field label="Contrato Social (PDF/imagem)">
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={e=>setContratoFile(e.target.files?.[0]||null)} style={{padding:6,fontSize:13}} />
                   {editing?.contrato_social_nome && !contratoFile && (
-                    <div style={{fontSize:11,marginTop:4}}>
-                      📎 <a href={`https://api.wsdevsoft.com/api/motoristas/${editing.id}/contrato-social`} target="_blank" rel="noreferrer" style={{color:'#2563eb'}}>{editing.contrato_social_nome}</a>
-                    </div>
-                  )}
-                </Field>
-              </div>
-
-              <div style={{gridColumn:'span 2'}}>
-                <Field label="Comprovante de Endereço">
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{padding:6,fontSize:13}}
-                    onChange={e=>setComprovanteFile(e.target.files?.[0]||null)}/>
-                  {editing?.comprovante_endereco_nome && !comprovanteFile && (
-                    <div style={{fontSize:11,marginTop:4}}>
-                      📎 <a href={`https://api.wsdevsoft.com/api/motoristas/${editing.id}/comprovante`} target="_blank" rel="noreferrer" style={{color:'#2563eb'}}>{editing.comprovante_endereco_nome}</a>
+                    <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+                      📎 <a href={`https://api.wsdevsoft.com/api/motoristas/${editing.id}/contrato-social`} target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>{editing.contrato_social_nome}</a>
                     </div>
                   )}
                 </Field>
@@ -1002,6 +963,12 @@ export function Motoristas() {
                     placeholder="Ex: Próprio, João da Silva, Empresa XYZ"/>
                 </Field>
               </div>
+              <Field label="Data de Admissão">
+                <Input type="date" value={form.data_admissao||''} onChange={e=>set('data_admissao',e.target.value)}/>
+              </Field>
+              <Field label="CNPJ (terceiros / PJ)">
+                <Input value={form.cnpj||''} onChange={e=>set('cnpj',e.target.value)} placeholder="00.000.000/0000-00"/>
+              </Field>
               <div style={{gridColumn:'span 2'}}>
                 <Field label="Transportadora">
                   <Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)}

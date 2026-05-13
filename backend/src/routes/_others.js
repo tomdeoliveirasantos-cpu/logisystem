@@ -28,6 +28,20 @@ const motUpload = multer({
   },
 });
 
+// Cadastro completo (admin) — múltiplos arquivos
+const motUploadFields = motUpload.fields([
+  { name: 'cnh_arquivo',          maxCount: 1 },
+  { name: 'cnpj_arquivo',         maxCount: 1 },
+  { name: 'comprovante_endereco', maxCount: 1 },
+  { name: 'contrato_social',      maxCount: 1 },
+]);
+
+// Helper: extrai nome/path de um arquivo enviado via upload.fields
+const fileInfo = (req, field) => {
+  const f = req.files && req.files[field] && req.files[field][0];
+  return f ? { nome: f.originalname, path: f.filename } : { nome: null, path: null };
+};
+
 motoristasRouter.get('/', async (req, res, next) => {
   try {
     const { status_cadastro, tipo_colaborador } = req.query;
@@ -70,7 +84,7 @@ motoristasRouter.get('/:id', async (req, res, next) => {
 });
 
 // Cadastro completo (admin)
-motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, next) => {
+motoristasRouter.post('/', motUploadFields, async (req, res, next) => {
   try {
     const {
       transportadora_id, nome, cnh, telefone, veiculo_padrao_id,
@@ -80,10 +94,13 @@ motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, nex
       contato_esposa, contato_pai, contato_mae, contato_outro_nome, contato_outro_telefone,
       status_cadastro = 'completo',
       tipo_colaborador = 'pendente',
-      dono_veiculo,
+      dono_veiculo, data_admissao, cnpj,
     } = req.body;
-    const cnh_arquivo_nome = req.file ? req.file.originalname : null;
-    const cnh_arquivo_path = req.file ? req.file.filename     : null;
+
+    const cnh_doc  = fileInfo(req, 'cnh_arquivo');
+    const cnpj_doc = fileInfo(req, 'cnpj_arquivo');
+    const comp_doc = fileInfo(req, 'comprovante_endereco');
+    const ctr_doc  = fileInfo(req, 'contrato_social');
 
     const { rows } = await db.query(
       `INSERT INTO logi_motoristas
@@ -92,16 +109,24 @@ motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, nex
          endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento,
          endereco_bairro, endereco_cidade, endereco_estado,
          contato_esposa, contato_pai, contato_mae, contato_outro_nome, contato_outro_telefone,
-         status_cadastro, tipo_colaborador, dono_veiculo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+         status_cadastro, tipo_colaborador, dono_veiculo,
+         data_admissao, cnpj,
+         cnpj_arquivo_nome, cnpj_arquivo_path,
+         comprovante_endereco_nome, comprovante_endereco_path,
+         contrato_social_nome, contrato_social_path)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
        RETURNING *`,
       [transportadora_id||null, nome, cnh||null, telefone||null, veiculo_padrao_id || null,
-       cnh_validade||null, cnh_categoria||null, cnh_arquivo_nome, cnh_arquivo_path,
+       cnh_validade||null, cnh_categoria||null, cnh_doc.nome, cnh_doc.path,
        endereco_cep||null, endereco_logradouro||null, endereco_numero||null, endereco_complemento||null,
        endereco_bairro||null, endereco_cidade||null, endereco_estado||null,
        contato_esposa||null, contato_pai||null, contato_mae||null,
        contato_outro_nome||null, contato_outro_telefone||null,
-       status_cadastro, tipo_colaborador, dono_veiculo||null]
+       status_cadastro, tipo_colaborador, dono_veiculo||null,
+       data_admissao||null, cnpj||null,
+       cnpj_doc.nome, cnpj_doc.path,
+       comp_doc.nome, comp_doc.path,
+       ctr_doc.nome,  ctr_doc.path]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -121,7 +146,7 @@ motoristasRouter.post('/pre-cadastro', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-motoristasRouter.put('/:id', motUpload.single('cnh_arquivo'), async (req, res, next) => {
+motoristasRouter.put('/:id', motUploadFields, async (req, res, next) => {
   try {
     const sets = [];
     const params = [];
@@ -151,10 +176,19 @@ motoristasRouter.put('/:id', motUpload.single('cnh_arquivo'), async (req, res, n
     add('status_cadastro', b.status_cadastro);
     add('tipo_colaborador', b.tipo_colaborador);
     add('dono_veiculo', b.dono_veiculo);
-    if (req.file) {
-      add('cnh_arquivo_nome', req.file.originalname);
-      add('cnh_arquivo_path', req.file.filename);
-    }
+    add('data_admissao', b.data_admissao);
+    add('cnpj', b.cnpj);
+
+    // Uploads opcionais (somente sobrescreve se o arquivo foi enviado)
+    const cnh_doc  = fileInfo(req, 'cnh_arquivo');
+    if (cnh_doc.path)  { add('cnh_arquivo_nome', cnh_doc.nome);          add('cnh_arquivo_path', cnh_doc.path); }
+    const cnpj_doc = fileInfo(req, 'cnpj_arquivo');
+    if (cnpj_doc.path) { add('cnpj_arquivo_nome', cnpj_doc.nome);        add('cnpj_arquivo_path', cnpj_doc.path); }
+    const comp_doc = fileInfo(req, 'comprovante_endereco');
+    if (comp_doc.path) { add('comprovante_endereco_nome', comp_doc.nome); add('comprovante_endereco_path', comp_doc.path); }
+    const ctr_doc  = fileInfo(req, 'contrato_social');
+    if (ctr_doc.path)  { add('contrato_social_nome', ctr_doc.nome);       add('contrato_social_path', ctr_doc.path); }
+
     if (!sets.length) return res.status(400).json({ error: 'Nada a atualizar' });
 
     params.push(req.params.id);
@@ -181,6 +215,24 @@ motoristasRouter.get('/:id/cnh', async (req, res, next) => {
     res.download(filePath, rows[0].cnh_arquivo_nome);
   } catch (err) { next(err); }
 });
+
+// Helper: serve um arquivo armazenado no motorista
+function serveDoc(colPath, colNome, errMsg) {
+  return async (req, res, next) => {
+    try {
+      const { rows } = await db.query(
+        `SELECT ${colPath} AS p, ${colNome} AS n FROM logi_motoristas WHERE id=$1`, [req.params.id]
+      );
+      if (!rows.length || !rows[0].p) return res.status(404).json({ error: errMsg });
+      const filePath = path.join(MOT_UPLOADS_DIR, rows[0].p);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado no disco' });
+      res.download(filePath, rows[0].n);
+    } catch (err) { next(err); }
+  };
+}
+motoristasRouter.get('/:id/comprovante-endereco', serveDoc('comprovante_endereco_path', 'comprovante_endereco_nome', 'Comprovante de endereço não encontrado'));
+motoristasRouter.get('/:id/cnpj-arquivo',         serveDoc('cnpj_arquivo_path',         'cnpj_arquivo_nome',         'Cartão CNPJ não encontrado'));
+motoristasRouter.get('/:id/contrato-social',      serveDoc('contrato_social_path',      'contrato_social_nome',      'Contrato social não encontrado'));
 
 // ── manutencoes.js ────────────────────────────────────────────
 const manutencoesRouter = express.Router();

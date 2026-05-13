@@ -3,6 +3,10 @@ const db = require('../db');
 
 const router = express.Router();
 
+// Sub-rota: adiantamentos (CRUD + abater)
+const adiantamentosRouter = require('./adiantamentos');
+router.use('/adiantamentos', adiantamentosRouter);
+
 // ════ CONTAS A RECEBER ════════════════════════════════════════════════════════
 // GET /api/financeiro/receber
 router.get('/receber', async (req, res, next) => {

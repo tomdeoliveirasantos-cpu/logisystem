@@ -22,6 +22,7 @@ const fornecedoresRouter     = require('./routes/fornecedores');
 const relatoriosRouter      = require('./routes/relatorios');
 const parametrosRouter      = require('./routes/parametros');
 const reajustesRouter       = require('./routes/reajustes');
+const ajudantesRouter       = require('./routes/ajudantes');
 const { publicRouter: cadastroPublicRouter, adminRouter: cadastroAdminRouter } = require('./routes/cadastro-motorista');
 
 const app = express();
@@ -51,6 +52,7 @@ app.use('/api/motoristas',      authMiddleware, motoristasRouter);
 app.use('/api/ordens',          authMiddleware, ordensRouter);
 app.use('/api/manutencoes',     authMiddleware, manutencoesRouter);
 app.use('/api/fornecedores',    authMiddleware, fornecedoresRouter);
+app.use('/api/ajudantes',       authMiddleware, ajudantesRouter);
 app.use('/api/multas',          authMiddleware, multasRouter);
 app.use('/api/financeiro',      authMiddleware, financeiroRouter);
 app.use('/api/relatorios',      authMiddleware, relatoriosRouter);

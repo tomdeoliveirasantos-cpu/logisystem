@@ -704,6 +704,31 @@ export function Motoristas() {
   const [cnhFile, setCnhFile] = useState(null);
   const { toast, showToast } = useToast();
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const [buscandoCep, setBuscandoCep] = useState(false);
+
+  // Máscara e busca de CEP via ViaCEP (auto-fill de endereço)
+  const maskCEP = v => (v||'').replace(/\D/g,'').replace(/(\d{5})(\d)/,'$1-$2').slice(0,9);
+  const handleCEP = async (raw) => {
+    const masked = maskCEP(raw);
+    setForm(f => ({ ...f, endereco_cep: masked }));
+    const clean = (raw||'').replace(/\D/g,'');
+    if (clean.length !== 8) return;
+    setBuscandoCep(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const d = await res.json();
+      if (!d.erro) {
+        setForm(f => ({
+          ...f,
+          endereco_logradouro: d.logradouro || f.endereco_logradouro || '',
+          endereco_bairro:     d.bairro     || f.endereco_bairro     || '',
+          endereco_cidade:     d.localidade || f.endereco_cidade     || '',
+          endereco_estado:     d.uf         || f.endereco_estado     || '',
+        }));
+      }
+    } catch (e) { /* silencioso, usuário pode preencher manual */ }
+    finally { setBuscandoCep(false); }
+  };
 
   const open = (row=null) => {
     setEditing(row);
@@ -719,6 +744,7 @@ export function Motoristas() {
       contato_esposa:row.contato_esposa, contato_pai:row.contato_pai, contato_mae:row.contato_mae,
       contato_outro_nome:row.contato_outro_nome, contato_outro_telefone:row.contato_outro_telefone,
       status_cadastro:row.status_cadastro,
+      dono_veiculo:row.dono_veiculo,
     } : {});
     setCnhFile(null);
     setModal(true);
@@ -842,7 +868,10 @@ export function Motoristas() {
             {/* Bloco endereço */}
             <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Endereço Residencial</div>
             <div className="form-grid cols-2" style={{marginBottom:14}}>
-              <Field label="CEP"><Input value={form.endereco_cep||''} onChange={e=>set('endereco_cep',e.target.value)}/></Field>
+              <Field label="CEP">
+                <Input value={form.endereco_cep||''} onChange={e=>handleCEP(e.target.value)} placeholder="00000-000" maxLength={9}/>
+                {buscandoCep && <div style={{fontSize:11,color:'#2563eb',marginTop:2}}>Buscando CEP...</div>}
+              </Field>
               <Field label="Cidade / UF">
                 <div style={{display:'flex',gap:6}}>
                   <Input value={form.endereco_cidade||''} onChange={e=>set('endereco_cidade',e.target.value)}/>
@@ -878,6 +907,12 @@ export function Motoristas() {
                 <Field label="Veículo Padrão">
                   <Select value={form.veiculo_padrao_id||''} onChange={e=>set('veiculo_padrao_id',e.target.value)}
                     options={[{value:'',label:'— Nenhum —'},...(veiculos||[]).map(v=>({value:v.id,label:`${v.placa} — ${v.tipo}`}))]}/>
+                </Field>
+              </div>
+              <div style={{gridColumn:'span 2'}}>
+                <Field label="Dono do Veículo">
+                  <Input value={form.dono_veiculo||''} onChange={e=>set('dono_veiculo',e.target.value)}
+                    placeholder="Ex: Próprio, João da Silva, Empresa XYZ"/>
                 </Field>
               </div>
               <div style={{gridColumn:'span 2'}}>

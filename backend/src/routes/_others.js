@@ -80,6 +80,7 @@ motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, nex
       contato_esposa, contato_pai, contato_mae, contato_outro_nome, contato_outro_telefone,
       status_cadastro = 'completo',
       tipo_colaborador = 'pendente',
+      dono_veiculo,
     } = req.body;
     const cnh_arquivo_nome = req.file ? req.file.originalname : null;
     const cnh_arquivo_path = req.file ? req.file.filename     : null;
@@ -91,8 +92,8 @@ motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, nex
          endereco_cep, endereco_logradouro, endereco_numero, endereco_complemento,
          endereco_bairro, endereco_cidade, endereco_estado,
          contato_esposa, contato_pai, contato_mae, contato_outro_nome, contato_outro_telefone,
-         status_cadastro, tipo_colaborador)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+         status_cadastro, tipo_colaborador, dono_veiculo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
        RETURNING *`,
       [transportadora_id||null, nome, cnh||null, telefone||null, veiculo_padrao_id || null,
        cnh_validade||null, cnh_categoria||null, cnh_arquivo_nome, cnh_arquivo_path,
@@ -100,7 +101,7 @@ motoristasRouter.post('/', motUpload.single('cnh_arquivo'), async (req, res, nex
        endereco_bairro||null, endereco_cidade||null, endereco_estado||null,
        contato_esposa||null, contato_pai||null, contato_mae||null,
        contato_outro_nome||null, contato_outro_telefone||null,
-       status_cadastro, tipo_colaborador]
+       status_cadastro, tipo_colaborador, dono_veiculo||null]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -149,6 +150,7 @@ motoristasRouter.put('/:id', motUpload.single('cnh_arquivo'), async (req, res, n
     add('contato_outro_telefone', b.contato_outro_telefone);
     add('status_cadastro', b.status_cadastro);
     add('tipo_colaborador', b.tipo_colaborador);
+    add('dono_veiculo', b.dono_veiculo);
     if (req.file) {
       add('cnh_arquivo_nome', req.file.originalname);
       add('cnh_arquivo_path', req.file.filename);

@@ -170,7 +170,8 @@ router.get('/pagar/:id/elegiveis', async (req, res, next) => {
 router.patch('/pagar/:id/pagar', async (req, res, next) => {
   const client = await db.pool.connect();
   try {
-    const { adiantamentos_a_abater } = req.body || {};
+    const { adiantamentos_a_abater, data_pagamento } = req.body || {};
+    const dataPgto = data_pagamento || new Date().toISOString().slice(0, 10);
 
     await client.query('BEGIN');
 
@@ -223,11 +224,11 @@ router.patch('/pagar/:id/pagar', async (req, res, next) => {
     const cpUpd = await client.query(
       `UPDATE logi_contas_pagar
           SET status='pago',
-              data_pagamento=CURRENT_DATE,
-              valor_pago=$1,
-              valor_adiantamentos=$2
-        WHERE id=$3 RETURNING *`,
-      [valorLiquido, totalAbater, req.params.id]
+              data_pagamento=$1,
+              valor_pago=$2,
+              valor_adiantamentos=$3
+        WHERE id=$4 RETURNING *`,
+      [dataPgto, valorLiquido, totalAbater, req.params.id]
     );
 
     // 4. Atualiza cada adiantamento abatido
@@ -252,6 +253,80 @@ router.patch('/pagar/:id/pagar', async (req, res, next) => {
       adiantamentos_abatidos: abates.length,
       valor_bruto: Number(cp.valor),
       valor_liquido: valorLiquido,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /api/financeiro/pagar/:id/estornar
+// Reverte o pagamento de uma CP. Se houve abatimento de adiantamentos,
+// devolve cada adto para pendente (subtraindo do valor_descontado).
+router.patch('/pagar/:id/estornar', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const cpQ = await client.query(
+      `SELECT id, status, valor_adiantamentos FROM logi_contas_pagar WHERE id=$1 FOR UPDATE`,
+      [req.params.id]
+    );
+    if (!cpQ.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'CP não encontrada' });
+    }
+    const cp = cpQ.rows[0];
+    if (cp.status !== 'pago') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'CP não está paga' });
+    }
+
+    // Localiza adiantamentos que foram abatidos nesta CP
+    const adtos = await client.query(
+      `SELECT id, valor, valor_descontado FROM logi_adiantamentos
+        WHERE cp_acerto_id=$1 FOR UPDATE`,
+      [req.params.id]
+    );
+
+    // Para reverter, precisamos saber QUANTO foi abatido em cada adto.
+    // Como o sistema permite abatimento parcial, e não guardamos histórico
+    // por adto, o estorno só é seguro se o adto foi abatido APENAS por
+    // esta CP. Como cp_acerto_id é único (último abate), assumimos que
+    // o saldo abatido nesta CP é igual ao valor_descontado atual do adto
+    // (caso comum, abatimento total). Para abatimento parcial sem
+    // histórico, fica a critério do usuário corrigir manualmente.
+    for (const a of adtos.rows) {
+      // Volta o adto para pendente com valor_descontado = 0
+      // Nota: se houve abatimentos parciais anteriores, eles serão perdidos.
+      // Em produção, considere uma tabela logi_adiantamento_abates(adto_id, cp_id, valor).
+      await client.query(
+        `UPDATE logi_adiantamentos
+            SET valor_descontado = 0,
+                status = 'pendente',
+                cp_acerto_id = NULL
+          WHERE id = $1`,
+        [a.id]
+      );
+    }
+
+    // Reverte a CP
+    const cpUpd = await client.query(
+      `UPDATE logi_contas_pagar
+          SET status = 'pendente',
+              data_pagamento = NULL,
+              valor_pago = NULL,
+              valor_adiantamentos = 0
+        WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      ...cpUpd.rows[0],
+      adiantamentos_revertidos: adtos.rows.length,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

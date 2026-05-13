@@ -86,6 +86,7 @@ export function ContasPagar() {
   const { data, loading, refetch } = useFetch('/financeiro/pagar');
   const { toast, showToast } = useToast();
   const [acertoCp, setAcertoCp] = useState(null); // CP em fluxo de pagamento (com adtos)
+  const [confirmCp, setConfirmCp] = useState(null); // CP em fluxo de pagamento simples (sem adtos)
 
   const rows = (data||[])
     .filter(r => r.status !== 'cancelado')
@@ -97,22 +98,36 @@ export function ContasPagar() {
     catch(e) { showToast(e.message,'error'); }
   };
 
-  // Verifica se a CP tem adtos pendentes; se sim, abre modal de acerto, senão paga direto
+  // Estorna o pagamento de uma CP, devolvendo adtos abatidos para pendente
+  const estornar = async (cp) => {
+    if (!confirm(`Estornar este pagamento?\n\nA CP voltará para pendente${Number(cp.valor_adiantamentos||0) > 0 ? ' e os adiantamentos abatidos serão reabertos' : ''}.`)) return;
+    try {
+      await api.patch(`/financeiro/pagar/${cp.id}/estornar`, {});
+      showToast('Pagamento estornado!');
+      refetch();
+    } catch(e) { showToast(e.message,'error'); }
+  };
+
+  // Verifica se a CP tem adtos pendentes; se sim, abre modal de acerto, senão modal de confirmação
   const iniciarPagamento = async (cp) => {
-    if (cp.tipo_lancamento === 'adiantamento') {
-      // Adiantamento já foi pago na criação. Esse botão não deveria aparecer pra ele.
-      return;
-    }
+    if (cp.tipo_lancamento === 'adiantamento') return;
     try {
       const r = await api.get(`/financeiro/pagar/${cp.id}/elegiveis`);
       if (r && r.elegiveis && r.elegiveis.length > 0) {
         setAcertoCp({ cp, elegiveis: r.elegiveis, total_pendente: r.total_pendente });
       } else {
-        // Sem adiantamentos a abater — paga direto
-        await api.patch(`/financeiro/pagar/${cp.id}/pagar`, {});
-        showToast('Marcado como pago!');
-        refetch();
+        // Sem adtos: abre modal de confirmação com data editável
+        setConfirmCp(cp);
       }
+    } catch(e) { showToast(e.message,'error'); }
+  };
+
+  const confirmarPagamentoSimples = async (cpId, dataPgto) => {
+    try {
+      await api.patch(`/financeiro/pagar/${cpId}/pagar`, { data_pagamento: dataPgto });
+      showToast('Marcado como pago!');
+      setConfirmCp(null);
+      refetch();
     } catch(e) { showToast(e.message,'error'); }
   };
 
@@ -188,6 +203,9 @@ export function ContasPagar() {
                   <td><StatusBadge status={r.status}/></td>
                   <td style={{whiteSpace:'nowrap'}}>
                     {podeAcerto && <button className="btn btn-ghost btn-sm" onClick={()=>iniciarPagamento(r)}>Pagar</button>}
+                    {r.status === 'pago' && r.tipo_lancamento !== 'adiantamento' && (
+                      <button className="btn btn-ghost btn-sm" onClick={()=>estornar(r)} title="Estornar pagamento" style={{color:'var(--amber)'}}>↺ Estornar</button>
+                    )}
                     <button className="btn btn-ghost btn-sm" onClick={()=>excluir(r.id)} style={{color:'#DC2626'}} title="Excluir lançamento">🗑️</button>
                   </td>
                 </tr>
@@ -196,6 +214,14 @@ export function ContasPagar() {
           </tbody>
         </table></div></div>
       </div>
+
+      {confirmCp && (
+        <ConfirmaPagamentoModal
+          cp={confirmCp}
+          onClose={()=>setConfirmCp(null)}
+          onConfirm={confirmarPagamentoSimples}
+        />
+      )}
 
       {acertoCp && (
         <ModalAcertoPagamento
@@ -225,6 +251,7 @@ function ModalAcertoPagamento({ cp, elegiveis, totalPendente, onClose, onSaved, 
     });
     return o;
   });
+  const [dataPgto, setDataPgto] = useState(new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
 
   const totalAbater = Object.entries(linhas)
@@ -256,7 +283,7 @@ function ModalAcertoPagamento({ cp, elegiveis, totalPendente, onClose, onSaved, 
       .map(([id, l]) => ({ id, valor: Number(l.valor) }));
     setSaving(true);
     try {
-      await api.patch(`/financeiro/pagar/${cp.id}/pagar`, { adiantamentos_a_abater: abates });
+      await api.patch(`/financeiro/pagar/${cp.id}/pagar`, { adiantamentos_a_abater: abates, data_pagamento: dataPgto });
       onSaved();
     } catch (e) {
       onError(e.message || 'Erro ao confirmar pagamento');
@@ -285,6 +312,12 @@ function ModalAcertoPagamento({ cp, elegiveis, totalPendente, onClose, onSaved, 
               </div>
               <div style={{fontSize:20,fontWeight:700}}>{fmt(valorBruto)}</div>
             </div>
+          </div>
+
+          <div style={{marginBottom:12,display:'flex',gap:12,alignItems:'center'}}>
+            <label style={{fontSize:13,fontWeight:500}}>Data do pagamento:</label>
+            <input type="date" value={dataPgto} onChange={e=>setDataPgto(e.target.value)}
+              style={{padding:'6px 10px',border:'1px solid var(--border)',borderRadius:6,fontSize:13}} />
           </div>
 
           <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>
@@ -356,6 +389,62 @@ function ModalAcertoPagamento({ cp, elegiveis, totalPendente, onClose, onSaved, 
           <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="btn btn-primary" onClick={confirmar} disabled={saving || excesso}>
             {saving ? 'Salvando...' : `Confirmar pagamento de ${fmt(valorLiquido)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modal de confirmação de pagamento simples (sem adiantamentos)
+// ─────────────────────────────────────────────────────────────────────────────
+function ConfirmaPagamentoModal({ cp, onClose, onConfirm }) {
+  const [dataPgto, setDataPgto] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+
+  const confirmar = async () => {
+    setSaving(true);
+    try {
+      await onConfirm(cp.id, dataPgto);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">Confirmar pagamento</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div style={{background:'rgba(37,99,235,0.06)',padding:'12px 14px',borderRadius:8,marginBottom:14,fontSize:13}}>
+            <div style={{fontWeight:600,marginBottom:4}}>{cp.descricao || cp.tipo_lancamento}</div>
+            <div style={{fontSize:11,color:'var(--text3)',marginBottom:8}}>
+              {cp.motorista_nome && `${cp.motorista_nome} • `}
+              {cp.veiculo_placa && `🚛 ${cp.veiculo_placa} • `}
+              {cp.numero_rota && `Rota ${cp.numero_rota}`}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
+              <span style={{fontSize:13,color:'var(--text2)'}}>Valor a pagar:</span>
+              <span style={{fontSize:20,fontWeight:700,color:'var(--green)'}}>{fmt(cp.valor)}</span>
+            </div>
+          </div>
+
+          <Field label="Data do pagamento *">
+            <Input type="date" value={dataPgto} onChange={e=>setDataPgto(e.target.value)} />
+          </Field>
+
+          <div style={{marginTop:12,padding:'8px 12px',background:'rgba(251,191,36,0.08)',borderRadius:6,fontSize:12,color:'var(--text2)'}}>
+            💡 Após confirmar, você pode usar o botão <strong>Estornar</strong> caso precise desfazer.
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="btn btn-primary" onClick={confirmar} disabled={saving}>
+            {saving ? 'Salvando...' : `Confirmar pagamento de ${fmt(cp.valor)}`}
           </button>
         </div>
       </div>

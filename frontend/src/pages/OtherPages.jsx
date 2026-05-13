@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
 import { StatusBadge, Modal, Field, Input, Select, SelectAdd, Textarea, useToast, Toast, ExportBtn } from '../components/UI';
@@ -85,26 +85,53 @@ export function ContasPagar() {
   const [filtroTipo, setFiltroTipo] = useState('');
   const { data, loading, refetch } = useFetch('/financeiro/pagar');
   const { toast, showToast } = useToast();
+  const [acertoCp, setAcertoCp] = useState(null); // CP em fluxo de pagamento (com adtos)
+
   const rows = (data||[])
     .filter(r => r.status !== 'cancelado')
     .filter(r => !filtroTipo || r.tipo_lancamento === filtroTipo);
-  const marcarPago = async (id) => { try { await api.patch(`/financeiro/pagar/${id}/pagar`,{}); showToast('Marcado como pago!'); refetch(); } catch(e) { showToast(e.message,'error'); } };
+
   const excluir = async (id) => {
     if (!confirm('Excluir este lançamento permanentemente?')) return;
     try { await api.delete(`/financeiro/pagar/${id}`); showToast('Lançamento excluído!'); refetch(); }
     catch(e) { showToast(e.message,'error'); }
   };
+
+  // Verifica se a CP tem adtos pendentes; se sim, abre modal de acerto, senão paga direto
+  const iniciarPagamento = async (cp) => {
+    if (cp.tipo_lancamento === 'adiantamento') {
+      // Adiantamento já foi pago na criação. Esse botão não deveria aparecer pra ele.
+      return;
+    }
+    try {
+      const r = await api.get(`/financeiro/pagar/${cp.id}/elegiveis`);
+      if (r && r.elegiveis && r.elegiveis.length > 0) {
+        setAcertoCp({ cp, elegiveis: r.elegiveis, total_pendente: r.total_pendente });
+      } else {
+        // Sem adiantamentos a abater — paga direto
+        await api.patch(`/financeiro/pagar/${cp.id}/pagar`, {});
+        showToast('Marcado como pago!');
+        refetch();
+      }
+    } catch(e) { showToast(e.message,'error'); }
+  };
+
   const total=rows.reduce((s,r)=>s+ +r.valor,0), emAberto=rows.filter(r=>r.status==='pendente').reduce((s,r)=>s+ +r.valor,0), pago=rows.filter(r=>r.status==='pago').reduce((s,r)=>s+ +r.valor,0);
+
   const cols=[
     {k:'numero_rota',l:'Rota'},
     {k:'tipo_lancamento',l:'Tipo',f:v=>TIPO_LANCAMENTO_LABEL[v]?.label||v||''},
     {k:'descricao',l:'Descrição'},
     {k:'transportadora_nome',l:'Transportadora'},
     {k:'motorista_nome',l:'Motorista'},
+    {k:'veiculo_placa',l:'Placa'},
     {k:'valor',l:'Valor (R$)',f:v=>v?Number(v).toFixed(2):''},
+    {k:'valor_adiantamentos',l:'Adto abatido',f:v=>v?Number(v).toFixed(2):''},
+    {k:'valor_pago',l:'Pago líquido',f:v=>v?Number(v).toFixed(2):''},
     {k:'vencimento',l:'Vencimento',f:v=>fmtDate(v)},
     {k:'status',l:'Status'},
   ];
+
   return (
     <div>
       <div className="page-header">
@@ -128,12 +155,13 @@ export function ContasPagar() {
           <div className="metric-card"><div className="metric-label">Lançamentos</div><div className="metric-value">{rows.length}</div></div>
         </div>
         <div className="card fade-up fade-up-1"><div className="table-wrap"><table>
-          <thead><tr><th>Rota</th><th>Tipo</th><th>Descrição</th><th>Benef. / Motorista</th><th>Valor</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead>
+          <thead><tr><th>Rota</th><th>Tipo</th><th>Descrição</th><th>Benef. / Motorista</th><th>Placa</th><th>Valor</th><th>Adto</th><th>Pago líq.</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead>
           <tbody>
-            {loading && Array.from({length:4}).map((_,i)=>(<tr key={i}>{Array.from({length:8}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'60%'}}/></td>))}</tr>))}
-            {!loading&&!rows.length&&<tr><td colSpan={8} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>Nenhum lançamento encontrado</td></tr>}
+            {loading && Array.from({length:4}).map((_,i)=>(<tr key={i}>{Array.from({length:11}).map((_,j)=>(<td key={j}><div style={{height:12,background:'var(--bg3)',borderRadius:4,width:'60%'}}/></td>))}</tr>))}
+            {!loading&&!rows.length&&<tr><td colSpan={11} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>Nenhum lançamento encontrado</td></tr>}
             {rows.map(r=>{
               const tipoInfo = TIPO_LANCAMENTO_LABEL[r.tipo_lancamento] || {label: r.tipo_lancamento||'—', badge:'badge-gray'};
+              const podeAcerto = r.status === 'pendente' && r.tipo_lancamento !== 'adiantamento';
               return (
                 <tr key={r.id}>
                   <td className="font-mono fw-600" style={{color:'var(--accent)',fontSize:12}}>{r.numero_rota||'—'}</td>
@@ -145,13 +173,21 @@ export function ContasPagar() {
                   <td>
                     {r.transportadora_nome && <div className="fw-500">{r.transportadora_nome}</div>}
                     {r.motorista_nome && <div style={{fontSize:11,color:'var(--text3)'}}>{r.motorista_nome}</div>}
-                    {!r.transportadora_nome && !r.motorista_nome && <span style={{color:'var(--text3)'}}>—</span>}
+                    {r.ajudante_nome && <div style={{fontSize:11,color:'var(--text3)'}}>👤 {r.ajudante_nome}</div>}
+                    {!r.transportadora_nome && !r.motorista_nome && !r.ajudante_nome && <span style={{color:'var(--text3)'}}>—</span>}
                   </td>
+                  <td className="font-mono" style={{fontSize:12}}>{r.veiculo_placa || '—'}</td>
                   <td className="fw-600">{fmt(r.valor)}</td>
+                  <td style={{fontSize:12,color: r.valor_adiantamentos > 0 ? 'var(--amber)' : 'var(--text3)'}}>
+                    {Number(r.valor_adiantamentos||0) > 0 ? fmt(r.valor_adiantamentos) : '—'}
+                  </td>
+                  <td className="fw-500" style={{color: r.valor_pago > 0 ? 'var(--green)' : 'var(--text3)'}}>
+                    {Number(r.valor_pago||0) > 0 ? fmt(r.valor_pago) : '—'}
+                  </td>
                   <td style={{fontSize:12}}>{fmtDate(r.vencimento)}</td>
                   <td><StatusBadge status={r.status}/></td>
                   <td style={{whiteSpace:'nowrap'}}>
-                    {r.status==='pendente'&&<button className="btn btn-ghost btn-sm" onClick={()=>marcarPago(r.id)}>Pagar</button>}
+                    {podeAcerto && <button className="btn btn-ghost btn-sm" onClick={()=>iniciarPagamento(r)}>Pagar</button>}
                     <button className="btn btn-ghost btn-sm" onClick={()=>excluir(r.id)} style={{color:'#DC2626'}} title="Excluir lançamento">🗑️</button>
                   </td>
                 </tr>
@@ -160,7 +196,169 @@ export function ContasPagar() {
           </tbody>
         </table></div></div>
       </div>
+
+      {acertoCp && (
+        <ModalAcertoPagamento
+          cp={acertoCp.cp}
+          elegiveis={acertoCp.elegiveis}
+          totalPendente={acertoCp.total_pendente}
+          onClose={()=>setAcertoCp(null)}
+          onSaved={()=>{ setAcertoCp(null); refetch(); showToast('Pagamento registrado com abatimento!'); }}
+          onError={(m)=>showToast(m,'error')}
+        />
+      )}
+
       {toast&&<Toast {...toast}/>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modal de acerto/pagamento com abatimento de adiantamentos
+// ─────────────────────────────────────────────────────────────────────────────
+function ModalAcertoPagamento({ cp, elegiveis, totalPendente, onClose, onSaved, onError }) {
+  // Estado: { [adto_id]: { selecionado: bool, valor: '' } }
+  const [linhas, setLinhas] = useState(() => {
+    const o = {};
+    elegiveis.forEach(e => {
+      o[e.id] = { selecionado: true, valor: Number(e.saldo).toFixed(2) };
+    });
+    return o;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const totalAbater = Object.entries(linhas)
+    .filter(([_, l]) => l.selecionado)
+    .reduce((s, [_, l]) => s + (Number(l.valor) || 0), 0);
+
+  const valorBruto = Number(cp.valor);
+  const valorLiquido = Math.max(0, valorBruto - totalAbater);
+  const excesso = totalAbater > valorBruto + 0.005;
+
+  // Auto-ajuste: se total a abater excede o frete, reduz proporcionalmente
+  useEffect(() => {
+    // Apenas informativo; não força. Decisão do usuário.
+  }, [totalAbater]);
+
+  const toggle = (id) => {
+    setLinhas(l => ({ ...l, [id]: { ...l[id], selecionado: !l[id].selecionado } }));
+  };
+  const setValor = (id, v) => {
+    setLinhas(l => ({ ...l, [id]: { ...l[id], valor: v } }));
+  };
+
+  const confirmar = async () => {
+    if (excesso) {
+      return onError(`Adiantamentos somam ${fmt(totalAbater)}, mais que o frete (${fmt(valorBruto)})`);
+    }
+    const abates = Object.entries(linhas)
+      .filter(([_, l]) => l.selecionado && Number(l.valor) > 0)
+      .map(([id, l]) => ({ id, valor: Number(l.valor) }));
+    setSaving(true);
+    try {
+      await api.patch(`/financeiro/pagar/${cp.id}/pagar`, { adiantamentos_a_abater: abates });
+      onSaved();
+    } catch (e) {
+      onError(e.message || 'Erro ao confirmar pagamento');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:720}}>
+        <div className="modal-header">
+          <span className="modal-title">Pagamento com abatimento de adiantamentos</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div style={{background:'rgba(37,99,235,0.06)',padding:'10px 14px',borderRadius:8,marginBottom:14,fontSize:13}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:600}}>Conta a pagar — {cp.descricao || cp.tipo_lancamento}</div>
+                <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>
+                  {cp.motorista_nome && `${cp.motorista_nome} • `}
+                  {cp.veiculo_placa && `🚛 ${cp.veiculo_placa} • `}
+                  {cp.ajudante_nome && `👤 ${cp.ajudante_nome} • `}
+                  {cp.numero_rota && `Rota ${cp.numero_rota}`}
+                </div>
+              </div>
+              <div style={{fontSize:20,fontWeight:700}}>{fmt(valorBruto)}</div>
+            </div>
+          </div>
+
+          <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>
+            Adiantamentos pendentes ({elegiveis.length}) — total: {fmt(totalPendente)}
+          </div>
+          <div className="table-wrap" style={{maxHeight:280,overflowY:'auto',border:'1px solid var(--border)',borderRadius:8}}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{width:30}}></th>
+                  <th>Data</th>
+                  <th>Beneficiário / Forma</th>
+                  <th>Saldo</th>
+                  <th>Valor a abater</th>
+                </tr>
+              </thead>
+              <tbody>
+                {elegiveis.map(e => {
+                  const l = linhas[e.id];
+                  const benef = e.motorista_nome || e.ajudante_nome || '—';
+                  return (
+                    <tr key={e.id}>
+                      <td><input type="checkbox" checked={l.selecionado} onChange={()=>toggle(e.id)} /></td>
+                      <td style={{fontSize:12}}>{fmtDate(e.data_adiantamento)}</td>
+                      <td>
+                        <div style={{fontSize:12,fontWeight:500}}>{benef}</div>
+                        {e.veiculo_placa && <div style={{fontSize:11,color:'var(--text3)'}}>🚛 {e.veiculo_placa}</div>}
+                        {e.forma_pagamento && <div style={{fontSize:11,color:'var(--text3)'}}>{e.forma_pagamento}</div>}
+                      </td>
+                      <td className="fw-500">{fmt(e.saldo)}</td>
+                      <td>
+                        <input
+                          type="number" step="0.01" min="0" max={e.saldo}
+                          value={l.valor}
+                          onChange={ev=>setValor(e.id, ev.target.value)}
+                          disabled={!l.selecionado}
+                          style={{width:110,padding:'4px 8px',border:'1px solid var(--border)',borderRadius:6,fontSize:13}}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{marginTop:16,padding:'14px 16px',background:'var(--bg2)',borderRadius:8,border:'1px solid var(--border)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:6}}>
+              <span>Valor bruto</span>
+              <span className="fw-500">{fmt(valorBruto)}</span>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:6,color:'var(--amber)'}}>
+              <span>(−) Adiantamentos</span>
+              <span className="fw-500">{fmt(totalAbater)}</span>
+            </div>
+            <div style={{height:1,background:'var(--border)',margin:'8px 0'}}/>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:700,color: excesso ? '#DC2626' : 'var(--green)'}}>
+              <span>{excesso ? '⚠ Excede o frete' : 'Valor a pagar'}</span>
+              <span>{fmt(valorLiquido)}</span>
+            </div>
+            {excesso && (
+              <div style={{fontSize:12,color:'#DC2626',marginTop:6}}>
+                Reduza o valor de algum adiantamento. O abatimento não pode exceder o frete.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="btn btn-primary" onClick={confirmar} disabled={saving || excesso}>
+            {saving ? 'Salvando...' : `Confirmar pagamento de ${fmt(valorLiquido)}`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

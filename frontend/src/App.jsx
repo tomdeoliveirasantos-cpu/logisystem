@@ -20,6 +20,7 @@ import {
   ContasReceber, ContasPagar,
   Manutencoes, Multas, Veiculos, Motoristas,
 } from './pages/OtherPages';
+import Adiantamentos from './pages/Adiantamentos';
 
 function UserMenu({ collapsed }) {
   const { user, logout } = useAuth();
@@ -146,6 +147,7 @@ function ProtectedApp() {
             <Route path="/receber" element={podeAcessar('financeiro') ? <ContasReceber /> : <Navigate to="/" />} />
             <Route path="/pagar" element={podeAcessar('financeiro') ? <ContasPagar /> : <Navigate to="/" />} />
             <Route path="/fretes" element={podeAcessar('financeiro') ? <TabelaFretesPage /> : <Navigate to="/" />} />
+            <Route path="/adiantamentos" element={podeAcessar('financeiro') ? <Adiantamentos /> : <Navigate to="/" />} />
             <Route path="/relatorios" element={podeAcessar('relatorios') ? <Relatorios /> : <Navigate to="/" />} />
             <Route path="/romaneio" element={podeAcessar('relatorios') ? <Romaneio /> : <Navigate to="/" />} />
             <Route path="/importar" element={podeAcessar('ordens') ? <Importacao /> : <Navigate to="/" />} />

@@ -78,6 +78,7 @@ const TIPO_LANCAMENTO_LABEL = {
   frete_terceiro:   { label: 'Frete Terceiro', badge: 'badge-blue' },
   diaria_motorista: { label: 'Diária Motorista', badge: 'badge-teal' },
   diaria_ajudante:  { label: 'Diária Ajudante', badge: 'badge-amber' },
+  adiantamento:     { label: 'Adiantamento', badge: 'badge-gray' },
 };
 
 export function ContasPagar() {
@@ -114,6 +115,7 @@ export function ContasPagar() {
             <option value="frete_terceiro">Frete Terceiro</option>
             <option value="diaria_motorista">Diária Motorista</option>
             <option value="diaria_ajudante">Diária Ajudante</option>
+            <option value="adiantamento">Adiantamento</option>
           </select>
           <ExportBtn rows={rows} filename="contas_pagar" columns={cols.map(c=>({key:c.k,label:c.l,fmt:c.f}))} />
         </div>

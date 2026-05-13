@@ -38,6 +38,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         { to: '/receber', icon: '📥', label: 'Contas a Receber', mod: 'financeiro' },
         { to: '/pagar',   icon: '📤', label: 'Contas a Pagar',   mod: 'financeiro' },
         { to: '/fretes',  icon: '💲', label: 'Tabela de Fretes', mod: 'financeiro' },
+        { to: '/adiantamentos', icon: '💸', label: 'Adiantamentos',  mod: 'financeiro' },
       ],
     },
     {

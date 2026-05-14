@@ -983,6 +983,31 @@ export function Motoristas() {
                   </Field>
                 </div>
               )}
+
+              {editing && (
+                <div style={{gridColumn:'span 2', marginTop:8, padding:'12px 14px', background:'rgba(37,99,235,.06)', borderRadius:8, border:'1px solid rgba(37,99,235,.15)'}}>
+                  <div style={{fontSize:11, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:8}}>
+                    🔑 Acesso ao app do motorista (/m)
+                  </div>
+                  {editing.cpf ? (
+                    <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{fontSize:13, flex:1, minWidth:200}}>
+                        {editing.tem_senha
+                          ? <span>✓ Motorista tem senha cadastrada{editing.ultimo_login && <span style={{color:'var(--text3)'}}> (último login: {fmtDate(editing.ultimo_login)})</span>}</span>
+                          : <span style={{color:'var(--amber)'}}>⚠️ Motorista ainda não tem senha. Gere uma para liberar o acesso ao app.</span>
+                        }
+                      </div>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={gerarSenha} disabled={gerandoSenha} style={{color:'#2563eb', whiteSpace:'nowrap'}}>
+                        {gerandoSenha ? 'Gerando...' : (editing.tem_senha ? '↻ Redefinir senha' : '🔑 Gerar senha')}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{fontSize:12, color:'var(--text3)'}}>
+                      ℹ️ Preencha e salve o CPF do motorista antes de gerar a senha de acesso.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className="modal-footer">

@@ -80,7 +80,8 @@ motoristasRouter.get('/:id', async (req, res, next) => {
        WHERE mo.id = $1`, [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
-    res.json(rows[0]);
+    const { senha_hash, ...rest } = rows[0];
+    res.json({ ...rest, tem_senha: !!senha_hash });
   } catch (err) { next(err); }
 });
 

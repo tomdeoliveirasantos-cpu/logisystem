@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
 import { Modal, Field, Input, Select, Textarea, useToast, Toast } from '../components/UI';
@@ -58,6 +58,14 @@ export default function Entregas() {
     motorista_id: '',
     aguardando_reagendamento: false,
   });
+  const [otIdFilter, setOtIdFilter] = useState('');
+
+  // Lê ?ot_id= da URL no carregamento (vindo do link na tela de Ordens)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const otId = p.get('ot_id');
+    if (otId) setOtIdFilter(otId);
+  }, []);
 
   // URL params da busca
   const qs = useMemo(() => {
@@ -67,8 +75,9 @@ export default function Entregas() {
     if (filtros.status)   p.set('status',   filtros.status);
     if (filtros.motorista_id) p.set('motorista_id', filtros.motorista_id);
     if (filtros.aguardando_reagendamento) p.set('aguardando_reagendamento', 'true');
+    if (otIdFilter)           p.set('ot_id', otIdFilter);
     return p.toString();
-  }, [filtros]);
+  }, [filtros, otIdFilter]);
 
   const { data, loading, refetch } = useFetch(`/ordens/entregas?${qs}`);
   const { data: motoristas } = useFetch('/motoristas');
@@ -131,6 +140,12 @@ export default function Entregas() {
       </div>
 
       <div className="page-body">
+        {otIdFilter && (
+          <div style={{background:'rgba(37,99,235,.08)', padding:'10px 14px', borderRadius:8, marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{fontSize:13}}>🔍 Filtrando apenas a OT <strong className="font-mono">{otIdFilter.substring(0,8)}...</strong></span>
+            <button className="btn btn-ghost btn-sm" onClick={()=>{ setOtIdFilter(''); window.history.replaceState({},'','/entregas'); }}>Limpar filtro</button>
+          </div>
+        )}
         {/* Filtros */}
         <div className="card fade-up" style={{padding:14, marginBottom:14}}>
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:10}}>

@@ -614,7 +614,19 @@ export default function Ordens() {
                     {visivel('peso') && <td style={{fontSize:12}}>{r.peso?Number(r.peso).toLocaleString('pt-BR')+' kg':'—'}</td>}
                     {visivel('nf') && <td className="font-mono" style={{fontSize:11}}>{r.nf||'—'}</td>}
                     {visivel('anexo') && <td><AnexoCell ordem={r} /></td>}
-                    <td><StatusBadge status={r.status} /></td>
+                    <td>
+                      <StatusBadge status={r.status} />
+                      {r.qt_paradas_real > 0 && (
+                        <div style={{fontSize:11, color:'var(--text3)', marginTop:2}}>
+                          {(() => {
+                            const resolvidas = (r.qt_entregues||0) + (r.qt_nao_entregues||0) + (r.qt_reentregas||0);
+                            const pct = r.qt_paradas_real ? Math.round((resolvidas/r.qt_paradas_real)*100) : 0;
+                            const cor = pct === 100 ? 'var(--green)' : pct > 0 ? 'var(--amber)' : 'var(--text3)';
+                            return <span style={{color:cor}}>📦 {resolvidas}/{r.qt_paradas_real} ({pct}%)</span>;
+                          })()}
+                        </div>
+                      )}
+                    </td>
                     <td>
                       <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
                         <select className="form-select" style={{width:100,fontSize:11,padding:'4px 6px'}}
@@ -879,13 +891,32 @@ export default function Ordens() {
               </div>
 
               {/* Resumo de paradas (só na edição, quando vier da importação) */}
-              {editingId && paradas.length > 0 && (
+              {editingId && paradas.length > 0 && (() => {
+                const cont = paradas.reduce((a,p) => { a[p.status||'pendente'] = (a[p.status||'pendente']||0)+1; return a; }, {});
+                const resolvidas = (cont.entregue||0) + (cont.nao_entregue||0) + (cont.reentrega||0) + (cont.cancelada||0);
+                const pct = paradas.length ? Math.round((resolvidas/paradas.length)*100) : 0;
+                return (
                 <div style={{
                   padding:'12px 14px',background:'var(--bg2)',border:'1px solid var(--border)',
                   borderRadius:'var(--radius)',marginBottom:14
                 }}>
-                  <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>
-                    📍 {paradas.length} Paradas (importadas do Roteasy)
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}}>
+                      📍 {paradas.length} Paradas {paradas[0]?.codigo_local ? '(do Roteasy)' : ''}
+                    </div>
+                    <a href={`/entregas?ot_id=${editingId}`} style={{fontSize:11, color:'var(--accent)', textDecoration:'none'}}>📋 Ver tela de entregas →</a>
+                  </div>
+                  {/* Barra de progresso */}
+                  <div style={{display:'flex',gap:6,marginBottom:8,fontSize:11}}>
+                    <span style={{color:'var(--text3)'}}>Progresso:</span>
+                    <span className="fw-600" style={{color:pct===100?'var(--green)':pct>0?'var(--amber)':'var(--text3)'}}>{resolvidas}/{paradas.length} ({pct}%)</span>
+                    {(cont.entregue||0) > 0 &&     <span style={{color:'var(--green)'}}>✅ {cont.entregue}</span>}
+                    {(cont.nao_entregue||0) > 0 && <span style={{color:'#DC2626'}}>❌ {cont.nao_entregue}</span>}
+                    {(cont.reentrega||0) > 0 &&    <span style={{color:'var(--amber)'}}>🔁 {cont.reentrega}</span>}
+                    {(cont.pendente||0) > 0 &&     <span style={{color:'var(--text3)'}}>⏳ {cont.pendente}</span>}
+                  </div>
+                  <div style={{height:6,background:'var(--bg3)',borderRadius:3,overflow:'hidden',marginBottom:8}}>
+                    <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--amber)',transition:'width .3s'}}/>
                   </div>
                   <div style={{maxHeight:140,overflow:'auto',fontSize:12}}>
                     {paradas.slice(0,10).map((p,i)=>(
@@ -898,7 +929,8 @@ export default function Ordens() {
                     {paradas.length > 10 && <div style={{color:'var(--text3)',fontSize:11,marginTop:4}}>... e mais {paradas.length-10}</div>}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Anexos (múltiplos) */}
               {visivel('anexo') && (

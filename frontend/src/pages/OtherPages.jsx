@@ -750,6 +750,7 @@ export function Motoristas() {
       dono_veiculo:row.dono_veiculo,
       data_admissao:row.data_admissao?.substring(0,10) || '',
       cnpj:row.cnpj,
+      cpf:row.cpf,
     } : {});
     setCnhFile(null);
     setCnpjFile(null);
@@ -963,6 +964,13 @@ export function Motoristas() {
                     placeholder="Ex: Próprio, João da Silva, Empresa XYZ"/>
                 </Field>
               </div>
+              <Field label="CPF">
+                <Input value={form.cpf||''} onChange={e=>{
+                  const v = (e.target.value||'').replace(/\D/g,'').slice(0,11)
+                    .replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+                  set('cpf', v);
+                }} placeholder="000.000.000-00" maxLength={14}/>
+              </Field>
               <Field label="Data de Admissão">
                 <Input type="date" value={form.data_admissao||''} onChange={e=>set('data_admissao',e.target.value)}/>
               </Field>

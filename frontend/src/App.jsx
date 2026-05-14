@@ -22,6 +22,7 @@ import {
 } from './pages/OtherPages';
 import Adiantamentos from './pages/Adiantamentos';
 import Entregas from './pages/Entregas';
+import MobileApp from './pages/MobileApp';
 
 function UserMenu({ collapsed }) {
   const { user, logout } = useAuth();
@@ -174,6 +175,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/cadastro-motorista/:token" element={<CadastroMotoristaPublico />} />
+        <Route path="/m/*" element={<MobileApp />} />
         <Route path="/*" element={<AuthProvider><ProtectedApp /></AuthProvider>} />
       </Routes>
     </BrowserRouter>

@@ -340,6 +340,31 @@ export default function Ordens() {
   const [showImportRoteasy, setShowImportRoteasy] = useState(false);
   // ── Estados novos: paradas, pré-cadastro, perfil ──
   const [paradas, setParadas] = useState([]);
+  const [paradaMarcacao, setParadaMarcacao] = useState(null); // {parada} para popup admin
+
+  // Recarrega lista de paradas (após marcação)
+  const recarregarParadas = async (ordemId) => {
+    if (!ordemId) return;
+    try {
+      const r = await api.get(`/ordens/${ordemId}/paradas`);
+      if (r?.paradas) setParadas(r.paradas);
+    } catch (e) { /* silencioso */ }
+  };
+
+  // Confirma marcação chamando endpoint admin
+  const confirmarMarcacaoParada = async ({ parada, status, motivo, observacao }) => {
+    try {
+      await api.patch(`/ordens/paradas/${parada.id}/status`, {
+        status,
+        motivo_nao_entrega: motivo || null,
+        observacao: observacao || null,
+        marcado_por: 'admin',
+      });
+      showToast('Status atualizado!');
+      setParadaMarcacao(null);
+      await recarregarParadas(editingId);
+    } catch (e) { showToast(e.message, 'error'); }
+  };
   const [ajudantesIds, setAjudantesIds] = useState([]);
   const [showPreMot, setShowPreMot] = useState(false);
   const [showPreVei, setShowPreVei] = useState(false);
@@ -617,7 +642,11 @@ export default function Ordens() {
                     <td>
                       <StatusBadge status={r.status} />
                       {r.qt_paradas_real > 0 && (
-                        <div style={{fontSize:11, color:'var(--text3)', marginTop:2}}>
+                        <div
+                          onClick={()=>window.location.assign(`/entregas?ot_id=${r.id}`)}
+                          title="Ver entregas desta OT"
+                          style={{fontSize:11, color:'var(--text3)', marginTop:2, cursor:'pointer', textDecoration:'underline dotted'}}
+                        >
                           {(() => {
                             const resolvidas = (r.qt_entregues||0) + (r.qt_nao_entregues||0) + (r.qt_reentregas||0);
                             const pct = r.qt_paradas_real ? Math.round((resolvidas/r.qt_paradas_real)*100) : 0;
@@ -644,6 +673,7 @@ export default function Ordens() {
                           {STATUS_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                         <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>openModal(r)} title="Editar">✏️</button>
+                        <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>window.location.assign(`/entregas?ot_id=${r.id}`)} title="Ver entregas desta OT">📦</button>
                         <button className="btn btn-ghost btn-sm" style={{padding:'4px 6px',fontSize:10}} onClick={()=>showHistorico(r.id)} title="Histórico">🕐</button>
                         {r.status !== 'cancelado' && (
                           <button className="btn btn-danger btn-sm" style={{padding:'4px 8px',fontSize:10}}
@@ -918,15 +948,28 @@ export default function Ordens() {
                   <div style={{height:6,background:'var(--bg3)',borderRadius:3,overflow:'hidden',marginBottom:8}}>
                     <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--amber)',transition:'width .3s'}}/>
                   </div>
-                  <div style={{maxHeight:140,overflow:'auto',fontSize:12}}>
-                    {paradas.slice(0,10).map((p,i)=>(
-                      <div key={i} style={{padding:'4px 0',borderBottom:'1px solid var(--border)',display:'flex',gap:8}}>
-                        <span style={{color:'var(--text3)',width:24}}>#{p.seq}</span>
-                        <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.cliente_nome}</span>
-                        <span style={{color:'var(--text3)'}}>{p.peso?Number(p.peso).toFixed(1)+'kg':''}</span>
-                      </div>
-                    ))}
-                    {paradas.length > 10 && <div style={{color:'var(--text3)',fontSize:11,marginTop:4}}>... e mais {paradas.length-10}</div>}
+                  <div style={{maxHeight:240,overflow:'auto',fontSize:12,border:'1px solid var(--border)',borderRadius:6}}>
+                    {paradas.map((p)=>{
+                      const statusInfo = {
+                        pendente:     { emoji: '⏳', color: 'var(--text3)', bg: 'transparent' },
+                        entregue:     { emoji: '✅', color: '#059669',      bg: 'rgba(5,150,105,.06)' },
+                        nao_entregue: { emoji: '❌', color: '#DC2626',      bg: 'rgba(220,38,38,.06)' },
+                        reentrega:    { emoji: '🔁', color: '#D97706',      bg: 'rgba(217,119,6,.06)' },
+                        cancelada:    { emoji: '❎', color: '#4B5563',      bg: 'rgba(75,85,99,.06)' },
+                      }[p.status||'pendente'] || { emoji: '⏳', color: 'var(--text3)', bg: 'transparent' };
+                      return (
+                        <div key={p.id||p.seq} style={{padding:'6px 8px',borderBottom:'1px solid var(--border)',display:'flex',gap:8,alignItems:'center',background:statusInfo.bg}}>
+                          <span style={{color:'var(--text3)',width:24,fontSize:11}}>#{p.seq}</span>
+                          <span style={{fontSize:14,width:18,textAlign:'center'}}>{statusInfo.emoji}</span>
+                          <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontSize:12}}>
+                            {p.cliente_nome || '—'}
+                            {p.nf && <span style={{color:'var(--text3)',marginLeft:6,fontSize:11}}>NF {p.nf}</span>}
+                          </span>
+                          {p.peso && <span style={{color:'var(--text3)',fontSize:11}}>{Number(p.peso).toFixed(1)}kg</span>}
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setParadaMarcacao(p)} style={{padding:'2px 8px',fontSize:11,whiteSpace:'nowrap'}}>🎯 Marcar</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 );
@@ -1032,6 +1075,15 @@ export default function Ordens() {
       )}
 
       {toast && <Toast {...toast} />}
+
+      {/* Popup: marcar status de uma parada (admin) */}
+      {paradaMarcacao && (
+        <ModalMarcarParadaAdmin
+          parada={paradaMarcacao}
+          onClose={()=>setParadaMarcacao(null)}
+          onConfirm={confirmarMarcacaoParada}
+        />
+      )}
 
       <ImportRoteasy
         open={showImportRoteasy}

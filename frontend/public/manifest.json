@@ -1,0 +1,25 @@
+{
+  "name": "LogiSystem - Motorista",
+  "short_name": "LogiSystem",
+  "description": "Área do motorista para marcar entregas em rota",
+  "start_url": "/m/",
+  "scope": "/m/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1E1B4B",
+  "theme_color": "#2563EB",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

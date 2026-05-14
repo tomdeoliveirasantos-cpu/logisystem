@@ -98,6 +98,33 @@ async function substituirParadas(client, ordemId, paradas) {
   return count;
 }
 
+// Calcula resumo das paradas de uma OT e retorna { total, contagens, percentual, status_calculado }
+// Status calculado: 'aguardando_inicio' | 'em_andamento' | 'finalizada' | null (se não há paradas)
+async function calcularProgressoOT(client, ordemId) {
+  const { rows } = await client.query(
+    `SELECT status, COUNT(*)::int AS qtd
+       FROM logi_ordem_paradas
+      WHERE ordem_id = $1
+      GROUP BY status`, [ordemId]
+  );
+  if (!rows.length) return { total: 0, contagens: {}, percentual: 0, status_calculado: null };
+
+  const contagens = {
+    pendente: 0, entregue: 0, nao_entregue: 0, reentrega: 0, cancelada: 0,
+  };
+  rows.forEach(r => { contagens[r.status] = r.qtd; });
+  const total = Object.values(contagens).reduce((a,b) => a+b, 0);
+  const resolvidas = total - contagens.pendente;
+  const percentual = total ? Math.round((resolvidas / total) * 100) : 0;
+
+  let status_calculado;
+  if (contagens.pendente === total) status_calculado = 'aguardando_inicio';
+  else if (resolvidas === total)    status_calculado = 'finalizada';
+  else                              status_calculado = 'em_andamento';
+
+  return { total, contagens, resolvidas, percentual, status_calculado };
+}
+
 // Gera CAR/CAP consolidado para uma OT (apaga os existentes pendentes da OT antes)
 async function regenerarFinanceiroOT(client, ordemId) {
   // Buscar dados da OT
@@ -1146,6 +1173,174 @@ router.delete('/:id', async (req, res, next) => {
   } finally {
     client.release();
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MÓDULO DE ENTREGAS (Fase 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/ordens/entregas
+// Lista todas as paradas com filtros para a tela analítica.
+// Query: ?data_de=&data_ate=&status=&motorista_id=&ot_id=&aguardando_reagendamento=
+router.get('/entregas', async (req, res, next) => {
+  try {
+    const { data_de, data_ate, status, motorista_id, ot_id, aguardando_reagendamento } = req.query;
+    const where = [];
+    const params = [];
+
+    const push = (sql, val) => { params.push(val); where.push(sql.replace('?', '$' + params.length)); };
+
+    if (data_de)        push('o.data >= ?', data_de);
+    if (data_ate)       push('o.data <= ?', data_ate);
+    if (status)         push('p.status = ?', status);
+    if (motorista_id)   push('o.motorista_id = ?', motorista_id);
+    if (ot_id)          push('p.ordem_id = ?', ot_id);
+    if (aguardando_reagendamento === 'true') {
+      // Reentregas que ainda não geraram nova parada
+      where.push(`p.status = 'reentrega' AND NOT EXISTS (
+        SELECT 1 FROM logi_ordem_paradas p2 WHERE p2.reentrega_origem_id = p.id
+      )`);
+    }
+
+    const sql = `
+      SELECT p.*,
+             o.numero_rota, o.data AS ot_data, o.status AS ot_status,
+             m.nome AS motorista_nome,
+             v.placa AS veiculo_placa
+        FROM logi_ordem_paradas p
+        JOIN logi_ordens_transporte o ON o.id = p.ordem_id
+        LEFT JOIN logi_motoristas m ON m.id = o.motorista_id
+        LEFT JOIN logi_veiculos   v ON v.id = o.veiculo_id
+       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+       ORDER BY o.data DESC, p.seq ASC
+       LIMIT 500`;
+
+    const { rows } = await db.query(sql, params);
+
+    // Métricas agregadas
+    const m = { total: rows.length, entregue: 0, nao_entregue: 0, pendente: 0, reentrega: 0, cancelada: 0 };
+    rows.forEach(r => { if (m[r.status] !== undefined) m[r.status]++; });
+    const resolvidas = m.entregue + m.nao_entregue + m.reentrega + m.cancelada;
+    const taxa_sucesso = resolvidas ? Math.round((m.entregue / resolvidas) * 100) : 0;
+
+    res.json({ rows, metricas: { ...m, resolvidas, taxa_sucesso } });
+  } catch (err) { next(err); }
+});
+
+// GET /api/ordens/:id/paradas — paradas de uma OT específica com progresso agregado
+router.get('/:id/paradas', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const paradas = await carregarParadas(req.params.id);
+    const progresso = await calcularProgressoOT(client, req.params.id);
+    res.json({ paradas, progresso });
+  } catch (err) { next(err); }
+  finally { client.release(); }
+});
+
+// PATCH /api/ordens/paradas/:id/status
+// body: { status, motivo_nao_entrega, observacao, nome_recebedor, latitude, longitude, marcado_por }
+router.patch('/paradas/:id/status', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const STATUS_VALIDOS = ['pendente','entregue','nao_entregue','reentrega','cancelada'];
+    const { status, motivo_nao_entrega, observacao, nome_recebedor,
+            latitude, longitude, marcado_por } = req.body;
+
+    if (!STATUS_VALIDOS.includes(status)) {
+      return res.status(400).json({ error: 'Status inválido' });
+    }
+
+    await client.query('BEGIN');
+
+    const upd = await client.query(
+      `UPDATE logi_ordem_paradas
+          SET status = $1,
+              motivo_nao_entrega = $2,
+              observacao = $3,
+              nome_recebedor = $4,
+              latitude = COALESCE($5, latitude),
+              longitude = COALESCE($6, longitude),
+              marcado_por = $7,
+              data_tentativa = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $8
+        RETURNING *, (SELECT ordem_id FROM logi_ordem_paradas WHERE id=$8) AS oid`,
+      [status, motivo_nao_entrega || null, observacao || null, nome_recebedor || null,
+       latitude || null, longitude || null, marcado_por || 'admin',
+       req.params.id]
+    );
+
+    if (!upd.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Parada não encontrada' });
+    }
+
+    const parada = upd.rows[0];
+    const progresso = await calcularProgressoOT(client, parada.ordem_id);
+
+    await client.query('COMMIT');
+    res.json({ parada, progresso });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(()=>{});
+    next(err);
+  } finally { client.release(); }
+});
+
+// POST /api/ordens/paradas/:id/reagendar
+// body: { ordem_id_destino } → cria uma nova parada na OT destino, vinculada à original
+router.post('/paradas/:id/reagendar', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const { ordem_id_destino } = req.body;
+    if (!ordem_id_destino) return res.status(400).json({ error: 'ordem_id_destino obrigatório' });
+
+    await client.query('BEGIN');
+
+    // Busca a parada original
+    const orig = await client.query(`SELECT * FROM logi_ordem_paradas WHERE id=$1`, [req.params.id]);
+    if (!orig.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Parada não encontrada' });
+    }
+    const p = orig.rows[0];
+    if (p.status !== 'reentrega') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Só pode reagendar parada com status reentrega' });
+    }
+    // Verifica se já foi reagendada
+    const ja = await client.query(`SELECT 1 FROM logi_ordem_paradas WHERE reentrega_origem_id=$1`, [p.id]);
+    if (ja.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Parada já foi reagendada anteriormente' });
+    }
+
+    // Determina seq na OT destino
+    const seqR = await client.query(
+      `SELECT COALESCE(MAX(seq),0)+1 AS next_seq FROM logi_ordem_paradas WHERE ordem_id=$1`,
+      [ordem_id_destino]
+    );
+    const novaSeq = seqR.rows[0].next_seq;
+
+    // Cria nova parada (copia dados do destino, status pendente, tentativa +1, link na origem)
+    const nova = await client.query(
+      `INSERT INTO logi_ordem_paradas
+        (ordem_id, seq, codigo_local, cliente_nome, endereco, regiao, peso,
+         pedido, remessa, nf, latitude, longitude, obs, status,
+         reentrega_origem_id, tentativa_numero)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pendente',$14,$15)
+       RETURNING *`,
+      [ordem_id_destino, novaSeq, p.codigo_local, p.cliente_nome, p.endereco, p.regiao, p.peso,
+       p.pedido, p.remessa, p.nf, p.latitude, p.longitude, p.obs,
+       p.id, (p.tentativa_numero || 1) + 1]
+    );
+
+    await client.query('COMMIT');
+    res.json({ nova_parada: nova.rows[0], origem_id: p.id });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(()=>{});
+    next(err);
+  } finally { client.release(); }
 });
 
 module.exports = router;

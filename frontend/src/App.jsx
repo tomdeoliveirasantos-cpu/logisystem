@@ -21,6 +21,7 @@ import {
   Manutencoes, Multas, Veiculos, Motoristas,
 } from './pages/OtherPages';
 import Adiantamentos from './pages/Adiantamentos';
+import Entregas from './pages/Entregas';
 
 function UserMenu({ collapsed }) {
   const { user, logout } = useAuth();
@@ -142,6 +143,7 @@ function ProtectedApp() {
             <Route path="/motoristas" element={podeAcessar('motoristas') ? <Motoristas /> : <Navigate to="/" />} />
             <Route path="/fornecedores" element={podeAcessar('manutencoes') ? <Fornecedores /> : <Navigate to="/" />} />
             <Route path="/ordens" element={podeAcessar('ordens') ? <Ordens /> : <Navigate to="/" />} />
+            <Route path="/entregas" element={podeAcessar('ordens') ? <Entregas /> : <Navigate to="/" />} />
             <Route path="/manutencoes" element={podeAcessar('manutencoes') ? <Manutencoes /> : <Navigate to="/" />} />
             <Route path="/multas" element={podeAcessar('multas') ? <Multas /> : <Navigate to="/" />} />
             <Route path="/receber" element={podeAcessar('financeiro') ? <ContasReceber /> : <Navigate to="/" />} />

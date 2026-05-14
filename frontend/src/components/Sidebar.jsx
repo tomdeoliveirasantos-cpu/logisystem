@@ -27,6 +27,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       label: 'Operacional',
       items: [
         { to: '/ordens',      icon: '📋', label: 'Ordens de Transporte', mod: 'ordens' },
+        { to: '/entregas',    icon: '📦', label: 'Entregas',              mod: 'ordens' },
         { to: '/importar',    icon: '📁', label: 'Importar Planilha',    mod: 'ordens' },
         { to: '/manutencoes', icon: '🔧', label: 'Manutenção',           mod: 'manutencoes' },
         { to: '/multas',      icon: '⚠️', label: 'Multas',              mod: 'multas' },

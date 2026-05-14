@@ -23,6 +23,7 @@ const relatoriosRouter      = require('./routes/relatorios');
 const parametrosRouter      = require('./routes/parametros');
 const reajustesRouter       = require('./routes/reajustes');
 const ajudantesRouter       = require('./routes/ajudantes');
+const motoristaAppRouter    = require('./routes/motorista-app');
 const { publicRouter: cadastroPublicRouter, adminRouter: cadastroAdminRouter } = require('./routes/cadastro-motorista');
 
 const app = express();
@@ -43,6 +44,7 @@ app.use('/api/auth', authRouter);
 
 // Rotas públicas — formulário de cadastro de motorista (acesso via token)
 app.use('/api/cadastro-motorista', cadastroPublicRouter);
+app.use('/api/motorista-app',      motoristaAppRouter);
 
 // Rotas protegidas (requerem token JWT)
 app.use('/api/clientes',        authMiddleware, clientesRouter);

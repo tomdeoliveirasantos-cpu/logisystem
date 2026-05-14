@@ -1,6 +1,7 @@
 // ── motoristas.js ─────────────────────────────────────────────
 const express = require('express');
 const multer  = require('multer');
+const bcrypt  = require('bcryptjs');
 const path    = require('path');
 const fs      = require('fs');
 const db = require('../db');
@@ -233,6 +234,41 @@ function serveDoc(colPath, colNome, errMsg) {
 motoristasRouter.get('/:id/comprovante-endereco', serveDoc('comprovante_endereco_path', 'comprovante_endereco_nome', 'Comprovante de endereço não encontrado'));
 motoristasRouter.get('/:id/cnpj-arquivo',         serveDoc('cnpj_arquivo_path',         'cnpj_arquivo_nome',         'Cartão CNPJ não encontrado'));
 motoristasRouter.get('/:id/contrato-social',      serveDoc('contrato_social_path',      'contrato_social_nome',      'Contrato social não encontrado'));
+
+// POST /motoristas/:id/definir-senha — admin define/reseta senha
+// body: { senha } (default = últimos 6 dígitos do CPF se omitido)
+motoristasRouter.post('/:id/definir-senha', async (req, res, next) => {
+  try {
+    const { senha } = req.body || {};
+    const { rows: ms } = await db.query(
+      `SELECT id, cpf, senha_hash FROM logi_motoristas WHERE id = $1`, [req.params.id]
+    );
+    if (!ms.length) return res.status(404).json({ error: 'Motorista não encontrado' });
+    const mot = ms[0];
+
+    let senhaFinal = senha;
+    if (!senhaFinal) {
+      if (!mot.cpf) return res.status(422).json({ error: 'Motorista sem CPF cadastrado. Preencha o CPF antes ou envie uma senha no body.' });
+      const cpfDigits = String(mot.cpf).replace(/\D/g, '');
+      if (cpfDigits.length < 6) return res.status(422).json({ error: 'CPF inválido' });
+      senhaFinal = cpfDigits.slice(-6);
+    }
+    if (String(senhaFinal).length < 4) {
+      return res.status(422).json({ error: 'Senha precisa ter no mínimo 4 caracteres' });
+    }
+
+    const hash = await bcrypt.hash(String(senhaFinal), 10);
+    await db.query(
+      `UPDATE logi_motoristas SET senha_hash = $1, senha_resetada = true WHERE id = $2`,
+      [hash, req.params.id]
+    );
+    res.json({
+      success: true,
+      senha_temporaria: senha ? null : senhaFinal,
+      mensagem: senha ? 'Senha definida com sucesso' : `Senha temporária: ${senhaFinal} (motorista deve trocar no 1º acesso)`,
+    });
+  } catch (err) { next(err); }
+});
 
 // ── manutencoes.js ────────────────────────────────────────────
 const manutencoesRouter = express.Router();

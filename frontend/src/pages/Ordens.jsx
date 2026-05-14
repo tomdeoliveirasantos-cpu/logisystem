@@ -1083,3 +1083,146 @@ export default function Ordens() {
     </div>
   );
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Popup: admin marca status de uma parada direto da tela de OT
+// ─────────────────────────────────────────────────────────────────────────────
+const MOTIVOS_NAO_ENTREGA_INLINE = [
+  'Cliente ausente',
+  'Endereço errado / não localizado',
+  'Recusou a entrega',
+  'Estabelecimento fechado',
+  'Mercadoria avariada',
+  'Documentação incompleta',
+  'Outro',
+];
+
+function ModalMarcarParadaAdmin({ parada, onClose, onConfirm }) {
+  const [statusAlvo, setStatusAlvo] = useState(null);
+  const [motivo, setMotivo] = useState('');
+  const [observacao, setObservacao] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const statusInfo = {
+    entregue:     { label: 'Entregue',     emoji: '✅', color: '#059669' },
+    nao_entregue: { label: 'Não entregue', emoji: '❌', color: '#DC2626' },
+    reentrega:    { label: 'Reentrega',    emoji: '🔁', color: '#D97706' },
+    cancelada:    { label: 'Cancelada',    emoji: '❎', color: '#4B5563' },
+    pendente:     { label: 'Pendente',     emoji: '↺', color: '#6B7280' },
+  };
+
+  const podeReverter = parada.status && parada.status !== 'pendente';
+  const precisaMotivo = statusAlvo === 'nao_entregue';
+
+  const confirmar = async () => {
+    if (!statusAlvo) return;
+    if (precisaMotivo && !motivo) return alert('Informe o motivo');
+    setSaving(true);
+    try {
+      await onConfirm({ parada, status: statusAlvo, motivo, observacao });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:460}}>
+        <div className="modal-header">
+          <span className="modal-title">🎯 Marcar entrega</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div style={{background:'var(--bg2)',padding:'10px 12px',borderRadius:8,marginBottom:14,fontSize:13}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+              <div style={{fontWeight:600}}>{parada.cliente_nome || 'Cliente sem nome'}</div>
+              <div style={{fontSize:11,color:'var(--text3)'}}>Parada #{parada.seq}</div>
+            </div>
+            {parada.endereco && <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>📍 {parada.endereco}</div>}
+            {parada.nf && <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>NF: {parada.nf}</div>}
+            {parada.status && parada.status !== 'pendente' && (
+              <div style={{marginTop:6,fontSize:11,color:statusInfo[parada.status]?.color}}>
+                Status atual: {statusInfo[parada.status]?.emoji} {statusInfo[parada.status]?.label}
+              </div>
+            )}
+          </div>
+
+          {!statusAlvo ? (
+            <>
+              <div style={{fontSize:12,color:'var(--text3)',marginBottom:8}}>Escolha o novo status:</div>
+              <button type="button" onClick={()=>setStatusAlvo('entregue')}
+                style={{width:'100%',padding:'12px 14px',marginBottom:6,fontSize:14,fontWeight:600,
+                        background:'rgba(5,150,105,.10)',color:'#059669',border:'1px solid rgba(5,150,105,.3)',
+                        borderRadius:8,cursor:'pointer'}}>
+                ✅ Entregue
+              </button>
+              <button type="button" onClick={()=>setStatusAlvo('nao_entregue')}
+                style={{width:'100%',padding:'12px 14px',marginBottom:6,fontSize:14,fontWeight:600,
+                        background:'rgba(220,38,38,.10)',color:'#DC2626',border:'1px solid rgba(220,38,38,.3)',
+                        borderRadius:8,cursor:'pointer'}}>
+                ❌ Não entregue
+              </button>
+              <button type="button" onClick={()=>setStatusAlvo('reentrega')}
+                style={{width:'100%',padding:'12px 14px',marginBottom:6,fontSize:14,fontWeight:600,
+                        background:'rgba(217,119,6,.10)',color:'#D97706',border:'1px solid rgba(217,119,6,.3)',
+                        borderRadius:8,cursor:'pointer'}}>
+                🔁 Reentrega
+              </button>
+              <button type="button" onClick={()=>setStatusAlvo('cancelada')}
+                style={{width:'100%',padding:'12px 14px',marginBottom:6,fontSize:14,fontWeight:600,
+                        background:'rgba(75,85,99,.10)',color:'#4B5563',border:'1px solid rgba(75,85,99,.3)',
+                        borderRadius:8,cursor:'pointer'}}>
+                ❎ Cancelar
+              </button>
+              {podeReverter && (
+                <button type="button" onClick={()=>setStatusAlvo('pendente')}
+                  style={{width:'100%',padding:'10px 14px',marginTop:10,fontSize:13,
+                          background:'transparent',color:'var(--text3)',border:'1px dashed var(--border)',
+                          borderRadius:8,cursor:'pointer'}}>
+                  ↺ Voltar para pendente
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,padding:'8px 12px',
+                           background:'var(--bg2)',borderRadius:8,fontSize:13,fontWeight:600,
+                           color:statusInfo[statusAlvo]?.color}}>
+                <span style={{fontSize:18}}>{statusInfo[statusAlvo]?.emoji}</span>
+                <span>Marcando como: {statusInfo[statusAlvo]?.label}</span>
+              </div>
+
+              {precisaMotivo && (
+                <div style={{marginBottom:10}}>
+                  <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:4}}>Motivo *</label>
+                  <select value={motivo} onChange={e=>setMotivo(e.target.value)}
+                    style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border)',borderRadius:6,fontSize:13}}>
+                    <option value="">— Selecione —</option>
+                    {MOTIVOS_NAO_ENTREGA_INLINE.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div style={{marginBottom:14}}>
+                <label style={{display:'block',fontSize:12,fontWeight:600,marginBottom:4}}>
+                  Observação {precisaMotivo ? '(opcional)' : ''}
+                </label>
+                <textarea value={observacao} onChange={e=>setObservacao(e.target.value)} rows={2}
+                  placeholder="Detalhes adicionais..."
+                  style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border)',borderRadius:6,fontSize:13,resize:'vertical'}}/>
+              </div>
+
+              <div style={{display:'flex',gap:8}}>
+                <button className="btn btn-ghost" onClick={()=>setStatusAlvo(null)} disabled={saving} style={{flex:1}}>
+                  ← Voltar
+                </button>
+                <button className="btn btn-primary" onClick={confirmar} disabled={saving} style={{flex:2}}>
+                  {saving ? 'Salvando...' : `Confirmar ${statusInfo[statusAlvo]?.label}`}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -123,6 +123,25 @@ export default function Importacao() {
 
   return (
     <div>
+
+        <div style={{
+          background: 'rgba(217,119,6,.10)',
+          border: '1px solid rgba(217,119,6,.3)',
+          padding: '14px 16px', borderRadius: 8, marginBottom: 16, fontSize: 13
+        }}>
+          <div style={{fontWeight: 600, color: '#92400E', marginBottom: 4}}>
+            ⚠️ Esta tela está descontinuada
+          </div>
+          <div style={{color: '#78350F', marginBottom: 8}}>
+            Use a opção <strong>📥 Importar Roteasy</strong> dentro de <strong>Ordens de Transporte</strong>.
+            Ela faz o match correto entre a planilha e as OTs existentes, mostra preview e cria as paradas vinculadas.
+          </div>
+          <a href="/ordens" style={{
+            display: 'inline-block', padding: '6px 12px',
+            background: '#D97706', color: '#fff', textDecoration: 'none',
+            borderRadius: 6, fontSize: 12, fontWeight: 600
+          }}>Ir para Ordens de Transporte →</a>
+        </div>
       <div className="page-header">
         <div style={{flex:1}}>
           <div className="page-title">Importar Roteirização</div>

@@ -28,7 +28,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       items: [
         { to: '/ordens',      icon: '📋', label: 'Ordens de Transporte', mod: 'ordens' },
         { to: '/entregas',    icon: '📦', label: 'Entregas',              mod: 'ordens' },
-        { to: '/importar',    icon: '📁', label: 'Importar Planilha',    mod: 'ordens' },
+        // { to: '/importar', icon: '📁', label: 'Importar Planilha', mod: 'ordens' }, // DEPRECATED 2026-05-14 - usar 'Importar Roteasy' dentro de Ordens. Remover em 2026-05-21.
         { to: '/manutencoes', icon: '🔧', label: 'Manutenção',           mod: 'manutencoes' },
         { to: '/multas',      icon: '⚠️', label: 'Multas',              mod: 'multas' },
       ],

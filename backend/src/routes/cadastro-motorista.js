@@ -91,6 +91,17 @@ publicRouter.post('/:token', docFields, async (req, res, next) => {
 
     const data = JSON.parse(req.body.dados || '{}');
 
+    // Validações de obrigatoriedade
+    if (!data.nome || !String(data.nome).trim()) {
+      return res.status(400).json({ error: 'Nome é obrigatório' });
+    }
+    if (!data.cpf || !String(data.cpf).trim()) {
+      return res.status(400).json({ error: 'CPF é obrigatório' });
+    }
+    if (!data.rg || !String(data.rg).trim()) {
+      return res.status(400).json({ error: 'RG é obrigatório' });
+    }
+
     const arquivos = {};
     for (const campo of ['cnh', 'cnpj_contrato_social', 'rntrc', 'comprovante_endereco', 'assinatura']) {
       if (req.files && req.files[campo] && req.files[campo][0]) {

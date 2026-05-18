@@ -97,7 +97,19 @@ motoristasRouter.post('/', motUploadFields, async (req, res, next) => {
       status_cadastro = 'completo',
       tipo_colaborador = 'pendente',
       dono_veiculo, data_admissao, cnpj,
+      cpf, rg,
     } = req.body;
+
+    // Validações de obrigatoriedade
+    if (!nome || !String(nome).trim()) {
+      return res.status(400).json({ error: 'Nome é obrigatório' });
+    }
+    if (!cpf || !String(cpf).trim()) {
+      return res.status(400).json({ error: 'CPF é obrigatório' });
+    }
+    if (!rg || !String(rg).trim()) {
+      return res.status(400).json({ error: 'RG é obrigatório' });
+    }
 
     const cnh_doc  = fileInfo(req, 'cnh_arquivo');
     const cnpj_doc = fileInfo(req, 'cnpj_arquivo');
@@ -115,8 +127,9 @@ motoristasRouter.post('/', motUploadFields, async (req, res, next) => {
          data_admissao, cnpj,
          cnpj_arquivo_nome, cnpj_arquivo_path,
          comprovante_endereco_nome, comprovante_endereco_path,
-         contrato_social_nome, contrato_social_path, organizacao_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
+         contrato_social_nome, contrato_social_path,
+         cpf, rg, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
        RETURNING *`,
       [transportadora_id||null, nome, cnh||null, telefone||null, veiculo_padrao_id || null,
        cnh_validade||null, cnh_categoria||null, cnh_doc.nome, cnh_doc.path,
@@ -129,6 +142,7 @@ motoristasRouter.post('/', motUploadFields, async (req, res, next) => {
        cnpj_doc.nome, cnpj_doc.path,
        comp_doc.nome, comp_doc.path,
        ctr_doc.nome,  ctr_doc.path,
+       cpf, rg,
        req.organizacao_id]
     );
     res.status(201).json(rows[0]);
@@ -157,6 +171,18 @@ motoristasRouter.put('/:id', motUploadFields, async (req, res, next) => {
       if (val !== undefined) { params.push(val); sets.push(`${col}=$${params.length}`); }
     };
     const b = req.body;
+
+    // Validações de obrigatoriedade nos campos que foram enviados
+    if (b.nome !== undefined && (!b.nome || !String(b.nome).trim())) {
+      return res.status(400).json({ error: 'Nome é obrigatório' });
+    }
+    if (b.cpf !== undefined && (!b.cpf || !String(b.cpf).trim())) {
+      return res.status(400).json({ error: 'CPF é obrigatório' });
+    }
+    if (b.rg !== undefined && (!b.rg || !String(b.rg).trim())) {
+      return res.status(400).json({ error: 'RG é obrigatório' });
+    }
+
     add('transportadora_id', b.transportadora_id);
     add('nome', b.nome);
     add('cnh', b.cnh);
@@ -181,6 +207,8 @@ motoristasRouter.put('/:id', motUploadFields, async (req, res, next) => {
     add('dono_veiculo', b.dono_veiculo);
     add('data_admissao', b.data_admissao);
     add('cnpj', b.cnpj);
+    add('cpf', b.cpf);
+    add('rg', b.rg);
 
     // Uploads opcionais (somente sobrescreve se o arquivo foi enviado)
     const cnh_doc  = fileInfo(req, 'cnh_arquivo');

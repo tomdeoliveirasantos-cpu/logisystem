@@ -112,6 +112,10 @@ export default function CadastroMotoristaPublico() {
 
   // ── Submeter ──
   const submit = async () => {
+    // Validações obrigatórias
+    if (!form.nome || !form.nome.trim()) return alert('Nome é obrigatório.');
+    if (!form.cpf || !form.cpf.trim())   return alert('CPF é obrigatório.');
+    if (!form.rg || !form.rg.trim())     return alert('RG é obrigatório.');
     if (!hasSig) return alert('Por favor, assine o contrato antes de enviar.');
     setSending(true);
     try {
@@ -252,18 +256,18 @@ export default function CadastroMotoristaPublico() {
                 <input style={s.input} value={form.rg||''} onChange={e=>set('rg',e.target.value)} placeholder="RG" />
               </div>
               <div>
-                <label style={s.label}>Nº CNH *</label>
+                <label style={s.label}>Nº CNH</label>
                 <input style={s.input} value={form.cnh_numero||''} onChange={e=>set('cnh_numero',e.target.value)} placeholder="Número da CNH" />
               </div>
               <div>
-                <label style={s.label}>Categoria CNH *</label>
+                <label style={s.label}>Categoria CNH</label>
                 <select style={s.input} value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}>
                   <option value="">Selecione</option>
                   {['A','B','C','D','E','AB','AC','AD','AE'].map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label style={s.label}>Validade CNH *</label>
+                <label style={s.label}>Validade CNH</label>
                 <input type="date" style={s.input} value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)} />
               </div>
               <div>

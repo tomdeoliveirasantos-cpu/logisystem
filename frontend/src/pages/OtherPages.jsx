@@ -751,6 +751,7 @@ export function Motoristas() {
       data_admissao:row.data_admissao?.substring(0,10) || '',
       cnpj:row.cnpj,
       cpf:row.cpf,
+      rg:row.rg,
     } : {});
     setCnhFile(null);
     setCnpjFile(null);
@@ -765,6 +766,17 @@ export function Motoristas() {
 
   const save = async () => {
     try {
+      // Validações obrigatórias
+      if (!form.nome || !form.nome.trim()) {
+        showToast('Nome é obrigatório','error'); return;
+      }
+      if (!form.cpf || !form.cpf.trim()) {
+        showToast('CPF é obrigatório','error'); return;
+      }
+      if (!form.rg || !form.rg.trim()) {
+        showToast('RG é obrigatório','error'); return;
+      }
+
       const fd = new FormData();
       for (const [k,v] of Object.entries(form)) {
         if (v != null && v !== '') fd.append(k, v);
@@ -781,7 +793,11 @@ export function Motoristas() {
         : 'https://api.wsdevsoft.com/api/motoristas';
       const method = editing ? 'PUT' : 'POST';
       const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error('Erro ao salvar');
+      if (!res.ok) {
+        let msg = 'Erro ao salvar';
+        try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
+        throw new Error(msg);
+      }
       showToast(editing ? 'Motorista atualizado!' : 'Motorista cadastrado!');
       refetch(); close();
     } catch(e) { showToast(e.message,'error'); }
@@ -842,9 +858,10 @@ export function Motoristas() {
             <div style={{fontSize:11,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>Identificação</div>
             <div className="form-grid cols-2" style={{marginBottom:14}}>
               <div style={{gridColumn:'span 2'}}>
-                <Field label="Tipo de Colaborador *">
+                <Field label="Tipo de Colaborador">
                   <Select value={form.tipo_colaborador||''} onChange={e=>set('tipo_colaborador',e.target.value)}
                     options={[
+                      {value:'',label:'— Selecionar —'},
                       {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
                       {value:'motorista_terceiro',label:'🚚 Motorista Terceiro'},
                       {value:'ajudante',label:'👷 Ajudante'},
@@ -964,12 +981,16 @@ export function Motoristas() {
                     placeholder="Ex: Próprio, João da Silva, Empresa XYZ"/>
                 </Field>
               </div>
-              <Field label="CPF">
+              <Field label="CPF *">
                 <Input value={form.cpf||''} onChange={e=>{
                   const v = (e.target.value||'').replace(/\D/g,'').slice(0,11)
                     .replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
                   set('cpf', v);
                 }} placeholder="000.000.000-00" maxLength={14}/>
+              </Field>
+              <Field label="RG *">
+                <Input value={form.rg||''} onChange={e=>set('rg', e.target.value)}
+                  placeholder="00.000.000-0" maxLength={20}/>
               </Field>
               <Field label="Data de Admissão">
                 <Input type="date" value={form.data_admissao||''} onChange={e=>set('data_admissao',e.target.value)}/>

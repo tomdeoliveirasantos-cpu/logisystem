@@ -46,8 +46,8 @@ const fileInfo = (req, field) => {
 motoristasRouter.get('/', async (req, res, next) => {
   try {
     const { status_cadastro, tipo_colaborador } = req.query;
-    const params = [];
-    const where = ['mo.ativo = true'];
+    const params = [req.organizacao_id];
+    const where = ['mo.ativo = true', 'mo.organizacao_id = $1'];
     if (status_cadastro) { params.push(status_cadastro); where.push(`mo.status_cadastro = $${params.length}`); }
     if (tipo_colaborador) {
       // aceita CSV: ?tipo_colaborador=motorista_proprio,motorista_terceiro
@@ -63,8 +63,8 @@ motoristasRouter.get('/', async (req, res, next) => {
       `SELECT mo.*, t.nome AS transportadora_nome,
               v.placa AS veiculo_padrao_placa, v.tipo AS veiculo_padrao_tipo
        FROM logi_motoristas mo
-       LEFT JOIN logi_transportadoras t ON t.id = mo.transportadora_id
-       LEFT JOIN logi_veiculos v ON v.id = mo.veiculo_padrao_id
+       LEFT JOIN logi_transportadoras t ON t.id = mo.transportadora_id AND t.organizacao_id = mo.organizacao_id
+       LEFT JOIN logi_veiculos v ON v.id = mo.veiculo_padrao_id AND v.organizacao_id = mo.organizacao_id
        WHERE ${where.join(' AND ')} ORDER BY mo.nome`, params
     );
     res.json(rows);
@@ -76,8 +76,8 @@ motoristasRouter.get('/:id', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT mo.*, t.nome AS transportadora_nome
        FROM logi_motoristas mo
-       LEFT JOIN logi_transportadoras t ON t.id = mo.transportadora_id
-       WHERE mo.id = $1`, [req.params.id]
+       LEFT JOIN logi_transportadoras t ON t.id = mo.transportadora_id AND t.organizacao_id = mo.organizacao_id
+       WHERE mo.id = $1 AND mo.organizacao_id = $2`, [req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
     const { senha_hash, ...rest } = rows[0];
@@ -115,8 +115,8 @@ motoristasRouter.post('/', motUploadFields, async (req, res, next) => {
          data_admissao, cnpj,
          cnpj_arquivo_nome, cnpj_arquivo_path,
          comprovante_endereco_nome, comprovante_endereco_path,
-         contrato_social_nome, contrato_social_path)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+         contrato_social_nome, contrato_social_path, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
        RETURNING *`,
       [transportadora_id||null, nome, cnh||null, telefone||null, veiculo_padrao_id || null,
        cnh_validade||null, cnh_categoria||null, cnh_doc.nome, cnh_doc.path,
@@ -128,7 +128,8 @@ motoristasRouter.post('/', motUploadFields, async (req, res, next) => {
        data_admissao||null, cnpj||null,
        cnpj_doc.nome, cnpj_doc.path,
        comp_doc.nome, comp_doc.path,
-       ctr_doc.nome,  ctr_doc.path]
+       ctr_doc.nome,  ctr_doc.path,
+       req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -140,9 +141,9 @@ motoristasRouter.post('/pre-cadastro', async (req, res, next) => {
     const { nome, cnh, telefone, transportadora_id, tipo_colaborador = 'pendente' } = req.body;
     if (!nome) return res.status(400).json({ error: 'nome é obrigatório' });
     const { rows } = await db.query(
-      `INSERT INTO logi_motoristas (nome, cnh, telefone, transportadora_id, status_cadastro, tipo_colaborador)
-       VALUES ($1,$2,$3,$4,'pendente_admin',$5) RETURNING *`,
-      [nome, cnh||null, telefone||null, transportadora_id||null, tipo_colaborador]
+      `INSERT INTO logi_motoristas (nome, cnh, telefone, transportadora_id, status_cadastro, tipo_colaborador, organizacao_id)
+       VALUES ($1,$2,$3,$4,'pendente_admin',$5,$6) RETURNING *`,
+      [nome, cnh||null, telefone||null, transportadora_id||null, tipo_colaborador, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -194,8 +195,11 @@ motoristasRouter.put('/:id', motUploadFields, async (req, res, next) => {
     if (!sets.length) return res.status(400).json({ error: 'Nada a atualizar' });
 
     params.push(req.params.id);
+    params.push(req.organizacao_id);
+    const idIdx = params.length - 1;
+    const orgIdx = params.length;
     const { rows } = await db.query(
-      `UPDATE logi_motoristas SET ${sets.join(',')} WHERE id=$${params.length} RETURNING *`,
+      `UPDATE logi_motoristas SET ${sets.join(',')} WHERE id=$${idIdx} AND organizacao_id=$${orgIdx} RETURNING *`,
       params
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
@@ -207,7 +211,8 @@ motoristasRouter.put('/:id', motUploadFields, async (req, res, next) => {
 motoristasRouter.get('/:id/cnh', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'SELECT cnh_arquivo_path, cnh_arquivo_nome FROM logi_motoristas WHERE id=$1', [req.params.id]
+      'SELECT cnh_arquivo_path, cnh_arquivo_nome FROM logi_motoristas WHERE id=$1 AND organizacao_id=$2',
+      [req.params.id, req.organizacao_id]
     );
     if (!rows.length || !rows[0].cnh_arquivo_path) {
       return res.status(404).json({ error: 'CNH não encontrada' });
@@ -218,12 +223,13 @@ motoristasRouter.get('/:id/cnh', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Helper: serve um arquivo armazenado no motorista
+// Helper: serve um arquivo armazenado no motorista (com isolamento por org)
 function serveDoc(colPath, colNome, errMsg) {
   return async (req, res, next) => {
     try {
       const { rows } = await db.query(
-        `SELECT ${colPath} AS p, ${colNome} AS n FROM logi_motoristas WHERE id=$1`, [req.params.id]
+        `SELECT ${colPath} AS p, ${colNome} AS n FROM logi_motoristas WHERE id=$1 AND organizacao_id=$2`,
+        [req.params.id, req.organizacao_id]
       );
       if (!rows.length || !rows[0].p) return res.status(404).json({ error: errMsg });
       const filePath = path.join(MOT_UPLOADS_DIR, rows[0].p);
@@ -242,7 +248,8 @@ motoristasRouter.post('/:id/definir-senha', async (req, res, next) => {
   try {
     const { senha } = req.body || {};
     const { rows: ms } = await db.query(
-      `SELECT id, cpf, senha_hash FROM logi_motoristas WHERE id = $1`, [req.params.id]
+      `SELECT id, cpf, senha_hash FROM logi_motoristas WHERE id = $1 AND organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
     );
     if (!ms.length) return res.status(404).json({ error: 'Motorista não encontrado' });
     const mot = ms[0];
@@ -260,8 +267,8 @@ motoristasRouter.post('/:id/definir-senha', async (req, res, next) => {
 
     const hash = await bcrypt.hash(String(senhaFinal), 10);
     await db.query(
-      `UPDATE logi_motoristas SET senha_hash = $1, senha_resetada = true WHERE id = $2`,
-      [hash, req.params.id]
+      `UPDATE logi_motoristas SET senha_hash = $1, senha_resetada = true WHERE id = $2 AND organizacao_id = $3`,
+      [hash, req.params.id, req.organizacao_id]
     );
     res.json({
       success: true,
@@ -300,16 +307,16 @@ const upload = multer({
 manutencoesRouter.get('/', async (req, res, next) => {
   try {
     const { veiculo_id } = req.query;
-    const params = [];
-    const where = [];
-    if (veiculo_id) { params.push(veiculo_id); where.push(`m.veiculo_id = $1`); }
-    const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const params = [req.organizacao_id];
+    const where = ['m.organizacao_id = $1'];
+    if (veiculo_id) { params.push(veiculo_id); where.push(`m.veiculo_id = $${params.length}`); }
+    const wc = 'WHERE ' + where.join(' AND ');
     const { rows } = await db.query(
       `SELECT m.*, v.placa, v.modelo, v.tipo AS veiculo_tipo,
               f.nome AS fornecedor_nome
        FROM logi_manutencoes m
-       JOIN logi_veiculos v ON v.id = m.veiculo_id
-       LEFT JOIN logi_fornecedores f ON f.id = m.fornecedor_id
+       JOIN logi_veiculos v ON v.id = m.veiculo_id AND v.organizacao_id = m.organizacao_id
+       LEFT JOIN logi_fornecedores f ON f.id = m.fornecedor_id AND f.organizacao_id = m.organizacao_id
        ${wc} ORDER BY m.data_manutencao DESC`, params
     );
     res.json(rows);
@@ -325,11 +332,11 @@ manutencoesRouter.post('/', upload.single('orcamento_anexo'), async (req, res, n
       `INSERT INTO logi_manutencoes
         (veiculo_id, tipo_manutencao, componente, descricao,
          valor_orcamento, aprovado_por, data_manutencao, data_vencimento,
-         fornecedor_id, orcamento_anexo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+         fornecedor_id, orcamento_anexo, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [veiculo_id, tipo_manutencao, componente, descricao,
        valor_orcamento, aprovado_por, data_manutencao || new Date(), data_vencimento || null,
-       fornecedor_id || null, orcamento_anexo]
+       fornecedor_id || null, orcamento_anexo, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -343,9 +350,11 @@ multasRouter.get('/', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT mu.*, v.placa, v.modelo, v.tipo AS veiculo_tipo, mo.nome AS motorista_nome
        FROM logi_multas mu
-       JOIN logi_veiculos v  ON v.id  = mu.veiculo_id
-       LEFT JOIN logi_motoristas mo ON mo.id = mu.motorista_id
-       ORDER BY mu.data_infracao DESC`
+       JOIN logi_veiculos v  ON v.id  = mu.veiculo_id AND v.organizacao_id = mu.organizacao_id
+       LEFT JOIN logi_motoristas mo ON mo.id = mu.motorista_id AND mo.organizacao_id = mu.organizacao_id
+       WHERE mu.organizacao_id = $1
+       ORDER BY mu.data_infracao DESC`,
+      [req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -358,10 +367,10 @@ multasRouter.post('/', async (req, res, next) => {
     const { rows } = await db.query(
       `INSERT INTO logi_multas
         (veiculo_id, motorista_id, valor, motorista_indicado,
-         cabe_recurso, data_infracao, descricao)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+         cabe_recurso, data_infracao, descricao, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [veiculo_id, motorista_id, valor, motorista_indicado,
-       cabe_recurso, data_infracao, descricao]
+       cabe_recurso, data_infracao, descricao, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }

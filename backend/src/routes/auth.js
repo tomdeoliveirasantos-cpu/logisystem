@@ -3,6 +3,7 @@ const bcrypt   = require('bcrypt');
 const jwt      = require('jsonwebtoken');
 const db       = require('../db');
 const { authMiddleware, requirePerfil, SECRET } = require('../middleware/auth');
+const { getUserOrgs, validarVinculo } = require('../middleware/tenant');
 
 const crypto = require('crypto');
 
@@ -15,6 +16,40 @@ const ORIGIN = 'https://app.wsdevsoft.com';
 
 // Armazenamento temporário de challenges (em memória — ok para sessão curta)
 const challenges = new Map();
+
+// ── Helpers de JWT ──────────────────────────────────────────
+function gerarToken(user, org = null) {
+  const payload = {
+    id: user.id,
+    nome: user.nome,
+    email: user.email,
+    perfil: user.perfil, // legacy — mantido por compatibilidade
+  };
+  if (org) {
+    payload.organizacao_id = org.id;
+    payload.organizacao_nome = org.nome;
+    payload.organizacao_slug = org.slug;
+    payload.perfil_na_org = org.perfil_na_org;
+    payload.is_wsdevsoft = org.is_wsdevsoft;
+  }
+  return jwt.sign(payload, SECRET, { expiresIn: '12h' });
+}
+
+// Token de pré-seleção (curto): usado entre login e select-org quando
+// usuário tem múltiplas orgs. Marcado com pending_org=true.
+function gerarTokenPreSelecao(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      perfil: user.perfil,
+      pending_org: true,
+    },
+    SECRET,
+    { expiresIn: '15m' }
+  );
+}
 
 // POST /api/auth/login
 router.post('/login', async (req, res, next) => {
@@ -31,18 +66,43 @@ router.post('/login', async (req, res, next) => {
     const ok = await bcrypt.compare(senha, user.senha_hash);
     if (!ok) return res.status(401).json({ error: 'E-mail ou senha incorretos' });
 
+    // Buscar orgs do usuário
+    const orgs = await getUserOrgs(user.id);
+    if (orgs.length === 0) {
+      return res.status(403).json({ error: 'Usuário sem vínculo a nenhuma organização ativa' });
+    }
+
     // Atualiza último login
     await db.query('UPDATE logi_usuarios SET ultimo_login=NOW() WHERE id=$1', [user.id]);
 
-    const token = jwt.sign(
-      { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil },
-      SECRET,
-      { expiresIn: '12h' }
-    );
+    const baseUser = {
+      id: user.id, nome: user.nome, email: user.email, perfil: user.perfil,
+      senha_resetada: user.senha_resetada,
+    };
 
-    res.json({
+    if (orgs.length === 1) {
+      // Único vínculo — emite JWT completo direto (UX igual ao anterior)
+      const token = gerarToken(user, orgs[0]);
+      return res.json({
+        token,
+        user: baseUser,
+        org: {
+          id: orgs[0].id, nome: orgs[0].nome, slug: orgs[0].slug,
+          logo_url: orgs[0].logo_url, cor_primaria: orgs[0].cor_primaria,
+          perfil_na_org: orgs[0].perfil_na_org, is_wsdevsoft: orgs[0].is_wsdevsoft,
+        },
+        orgs,
+        precisa_selecionar_org: false,
+      });
+    }
+
+    // Múltiplas orgs — emite token de pré-seleção
+    const token = gerarTokenPreSelecao(user);
+    return res.json({
       token,
-      user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil }
+      user: baseUser,
+      orgs,
+      precisa_selecionar_org: true,
     });
   } catch (err) { next(err); }
 });
@@ -50,6 +110,55 @@ router.post('/login', async (req, res, next) => {
 // GET /api/auth/me — valida token e retorna dados do usuário
 router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
+});
+
+// GET /api/auth/me/orgs — lista as orgs do usuário logado
+router.get('/me/orgs', authMiddleware, async (req, res, next) => {
+  try {
+    const orgs = await getUserOrgs(req.user.id);
+    res.json(orgs);
+  } catch (err) { next(err); }
+});
+
+// POST /api/auth/select-org — emite novo JWT já com a org escolhida
+// Aceita tanto token de pré-seleção quanto token completo (para troca de org)
+router.post('/select-org', authMiddleware, async (req, res, next) => {
+  try {
+    const { organizacao_id } = req.body;
+    if (!organizacao_id) return res.status(422).json({ error: 'organizacao_id obrigatório' });
+
+    // Valida que o usuário tem vínculo ativo com aquela org
+    const vinculo = await validarVinculo(req.user.id, organizacao_id);
+    if (!vinculo) {
+      return res.status(403).json({ error: 'Sem acesso a esta organização' });
+    }
+
+    // Recarrega dados do usuário (caso tenham mudado desde o token original)
+    const { rows } = await db.query(
+      'SELECT id, nome, email, perfil, ativo, senha_resetada FROM logi_usuarios WHERE id = $1 AND ativo = true',
+      [req.user.id]
+    );
+    if (!rows.length) return res.status(401).json({ error: 'Usuário inativo' });
+    const user = rows[0];
+
+    // Busca dados completos da org para o token
+    const { rows: orgRows } = await db.query(
+      `SELECT id, nome, slug, logo_url, cor_primaria, is_wsdevsoft FROM logi_organizacoes WHERE id = $1 AND ativo = TRUE`,
+      [organizacao_id]
+    );
+    if (!orgRows.length) return res.status(404).json({ error: 'Organização não encontrada' });
+    const org = { ...orgRows[0], perfil_na_org: vinculo.perfil_na_org };
+
+    const token = gerarToken(user, org);
+    res.json({
+      token,
+      user: {
+        id: user.id, nome: user.nome, email: user.email, perfil: user.perfil,
+        senha_resetada: user.senha_resetada,
+      },
+      org,
+    });
+  } catch (err) { next(err); }
 });
 
 // ── Gestão de usuários (só admin) ──────────────────────────
@@ -110,7 +219,8 @@ router.patch('/usuarios/senha', authMiddleware, async (req, res, next) => {
     const ok = await bcrypt.compare(senha_atual, rows[0].senha_hash);
     if (!ok) return res.status(401).json({ error: 'Senha atual incorreta' });
     const hash = await bcrypt.hash(nova_senha, 10);
-    await db.query('UPDATE logi_usuarios SET senha_hash=$1,updated_at=NOW() WHERE id=$2', [hash, req.user.id]);
+    // Limpa flag senha_resetada quando o usuário troca a senha
+    await db.query('UPDATE logi_usuarios SET senha_hash=$1,senha_resetada=false,updated_at=NOW() WHERE id=$2', [hash, req.user.id]);
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -242,7 +352,7 @@ router.post('/webauthn/auth-verify', async (req, res, next) => {
 
     // Buscar credencial no banco
     const { rows } = await db.query(
-      `SELECT wc.*, u.id AS uid, u.nome, u.email, u.perfil
+      `SELECT wc.*, u.id AS uid, u.nome, u.email, u.perfil, u.senha_resetada
        FROM logi_webauthn_credentials wc
        JOIN logi_usuarios u ON u.id = wc.usuario_id
        WHERE wc.credential_id = $1 AND u.ativo = true`,
@@ -276,18 +386,42 @@ router.post('/webauthn/auth-verify', async (req, res, next) => {
     // Atualiza último login
     await db.query('UPDATE logi_usuarios SET ultimo_login=NOW() WHERE id=$1', [cred.uid]);
 
-    // Gerar JWT
-    const token = jwt.sign(
-      { id: cred.uid, nome: cred.nome, email: cred.email, perfil: cred.perfil },
-      SECRET,
-      { expiresIn: '12h' }
-    );
+    // Busca orgs do usuário
+    const userForToken = { id: cred.uid, nome: cred.nome, email: cred.email, perfil: cred.perfil };
+    const orgs = await getUserOrgs(cred.uid);
+
+    if (orgs.length === 0) {
+      return res.status(403).json({ error: 'Usuário sem vínculo a nenhuma organização ativa' });
+    }
+
+    const baseUser = {
+      id: cred.uid, nome: cred.nome, email: cred.email, perfil: cred.perfil,
+      senha_resetada: cred.senha_resetada,
+    };
 
     challenges.delete(challengeId);
 
-    res.json({
+    if (orgs.length === 1) {
+      const token = gerarToken(userForToken, orgs[0]);
+      return res.json({
+        token,
+        user: baseUser,
+        org: {
+          id: orgs[0].id, nome: orgs[0].nome, slug: orgs[0].slug,
+          logo_url: orgs[0].logo_url, cor_primaria: orgs[0].cor_primaria,
+          perfil_na_org: orgs[0].perfil_na_org, is_wsdevsoft: orgs[0].is_wsdevsoft,
+        },
+        orgs,
+        precisa_selecionar_org: false,
+      });
+    }
+
+    const token = gerarTokenPreSelecao(userForToken);
+    return res.json({
       token,
-      user: { id: cred.uid, nome: cred.nome, email: cred.email, perfil: cred.perfil }
+      user: baseUser,
+      orgs,
+      precisa_selecionar_org: true,
     });
   } catch (err) { next(err); }
 });

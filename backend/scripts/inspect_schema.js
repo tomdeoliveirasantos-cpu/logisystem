@@ -2,6 +2,16 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const fs = require('fs');
 
+const log = (msg) => fs.appendFileSync('C:\\Desenvolvimento\\logisystem\\backend\\schema_inspect.txt', msg + '\n');
+
+fs.writeFileSync('C:\\Desenvolvimento\\logisystem\\backend\\schema_inspect.txt', '');
+
+log('DB_HOST=' + process.env.DB_HOST);
+log('DB_PORT=' + process.env.DB_PORT);
+log('DB_NAME=' + process.env.DB_NAME);
+log('DB_USER=' + process.env.DB_USER);
+log('HAS_PWD=' + (!!process.env.DB_PASSWORD));
+
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -12,7 +22,7 @@ const pool = new Pool({
 
 (async () => {
   try {
-    // Lista todas as tabelas logi_*
+    log('Conectando...');
     const tables = await pool.query(`
       SELECT table_name
       FROM information_schema.tables
@@ -20,10 +30,9 @@ const pool = new Pool({
       ORDER BY table_name
     `);
 
-    let output = `=== TABELAS LOGI_* (${tables.rows.length}) ===\n`;
-    tables.rows.forEach(r => output += `- ${r.table_name}\n`);
+    log(`\n=== TABELAS LOGI_* (${tables.rows.length}) ===`);
+    tables.rows.forEach(r => log(`- ${r.table_name}`));
 
-    // Verifica se já existe coluna organizacao/empresa em alguma
     const orgCols = await pool.query(`
       SELECT table_name, column_name, data_type
       FROM information_schema.columns
@@ -33,10 +42,9 @@ const pool = new Pool({
       ORDER BY table_name, column_name
     `);
 
-    output += `\n=== COLUNAS RELACIONADAS A EMPRESA/ORG (${orgCols.rows.length}) ===\n`;
-    orgCols.rows.forEach(r => output += `- ${r.table_name}.${r.column_name} (${r.data_type})\n`);
+    log(`\n=== COLUNAS RELACIONADAS A EMPRESA/ORG (${orgCols.rows.length}) ===`);
+    orgCols.rows.forEach(r => log(`- ${r.table_name}.${r.column_name} (${r.data_type})`));
 
-    // Schema de logi_usuarios
     const userCols = await pool.query(`
       SELECT column_name, data_type, is_nullable, column_default
       FROM information_schema.columns
@@ -44,27 +52,25 @@ const pool = new Pool({
       ORDER BY ordinal_position
     `);
 
-    output += `\n=== logi_usuarios SCHEMA ===\n`;
-    userCols.rows.forEach(r => output += `- ${r.column_name} ${r.data_type}${r.is_nullable === 'NO' ? ' NOT NULL' : ''}${r.column_default ? ' DEFAULT '+r.column_default : ''}\n`);
+    log(`\n=== logi_usuarios SCHEMA ===`);
+    userCols.rows.forEach(r => log(`- ${r.column_name} ${r.data_type}${r.is_nullable === 'NO' ? ' NOT NULL' : ''}${r.column_default ? ' DEFAULT '+r.column_default : ''}`));
 
-    // Conta registros por tabela operacional principal
-    const mainTables = ['logi_usuarios', 'logi_clientes', 'logi_motoristas', 'logi_veiculos', 'logi_ordens_transporte', 'logi_romaneios', 'logi_fornecedores'];
-    output += `\n=== CONTAGEM DE REGISTROS ===\n`;
+    const mainTables = ['logi_usuarios', 'logi_clientes', 'logi_motoristas', 'logi_veiculos', 'logi_ordens_transporte', 'logi_romaneios', 'logi_fornecedores', 'logi_manutencoes', 'logi_contas_pagar', 'logi_contas_receber', 'logi_multas', 'logi_tabela_frete'];
+    log(`\n=== CONTAGEM DE REGISTROS ===`);
     for (const t of mainTables) {
       try {
         const r = await pool.query(`SELECT COUNT(*) as c FROM ${t}`);
-        output += `- ${t}: ${r.rows[0].c}\n`;
+        log(`- ${t}: ${r.rows[0].c}`);
       } catch (e) {
-        output += `- ${t}: (não existe ou erro)\n`;
+        log(`- ${t}: (${e.message.substring(0, 60)})`);
       }
     }
 
-    fs.writeFileSync('C:\\Desenvolvimento\\logisystem\\backend\\schema_inspect.txt', output);
-    console.log('OK escrito em schema_inspect.txt');
+    log('\nOK');
     process.exit(0);
   } catch (e) {
-    console.error('ERRO:', e.message);
-    fs.writeFileSync('C:\\Desenvolvimento\\logisystem\\backend\\schema_inspect.txt', 'ERRO: ' + e.message);
+    log('ERRO: ' + e.message);
+    log('STACK: ' + e.stack);
     process.exit(1);
   }
 })();

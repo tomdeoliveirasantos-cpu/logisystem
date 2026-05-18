@@ -11,25 +11,6 @@ const log = (m) => {
   fs.appendFileSync(LOG, m + '\n');
 };
 
-/**
- * Migration 022 — Multi-tenant: constraints UNIQUE escopadas por organização
- *
- * Hoje várias tabelas têm UNIQUE em campos como cpf/cnpj/placa/documento.
- * Para multi-tenant, isso impede duas organizações terem (por exemplo)
- * o mesmo CPF ou placa, o que é um requisito legítimo do negócio.
- *
- * Esta migration:
- *  1. Remove os UNIQUE globais
- *  2. Cria UNIQUE compostos (organizacao_id, <campo>)
- *
- * Constraints tratadas:
- *  - logi_motoristas:      uniq_motoristas_cpf      → (organizacao_id, cpf)
- *  - logi_ajudantes:       uq_ajudantes_cpf         → (organizacao_id, cpf)
- *  - logi_veiculos:        logi_veiculos_placa_key  → (organizacao_id, placa)
- *  - logi_clientes:        logi_clientes_documento_key + uq_clientes_documento → (organizacao_id, documento)
- *  - logi_transportadoras: logi_transportadoras_cnpj_key → (organizacao_id, cnpj)
- */
-
 const CONSTRAINTS = [
   { tabela: 'logi_motoristas',      drop: ['uniq_motoristas_cpf'],                                        col: 'cpf',       novoNome: 'uq_motoristas_org_cpf' },
   { tabela: 'logi_ajudantes',       drop: ['uq_ajudantes_cpf'],                                           col: 'cpf',       novoNome: 'uq_ajudantes_org_cpf' },
@@ -37,6 +18,27 @@ const CONSTRAINTS = [
   { tabela: 'logi_clientes',        drop: ['logi_clientes_documento_key','uq_clientes_documento'],        col: 'documento', novoNome: 'uq_clientes_org_documento' },
   { tabela: 'logi_transportadoras', drop: ['logi_transportadoras_cnpj_key'],                              col: 'cnpj',      novoNome: 'uq_transportadoras_org_cnpj' },
 ];
+
+// Helper: tenta dropar constraint OU índice; isola em SAVEPOINT para não abortar a transação
+async function dropConstraintOrIndex(client, tabela, nome) {
+  await client.query('SAVEPOINT sp');
+  try {
+    await client.query(`ALTER TABLE ${tabela} DROP CONSTRAINT ${nome}`);
+    await client.query('RELEASE SAVEPOINT sp');
+    return 'constraint';
+  } catch (e) {
+    await client.query('ROLLBACK TO SAVEPOINT sp');
+    await client.query('SAVEPOINT sp');
+    try {
+      await client.query(`DROP INDEX ${nome}`);
+      await client.query('RELEASE SAVEPOINT sp');
+      return 'index';
+    } catch (e2) {
+      await client.query('ROLLBACK TO SAVEPOINT sp');
+      return null;
+    }
+  }
+}
 
 (async () => {
   const client = await p.connect();
@@ -48,8 +50,7 @@ const CONSTRAINTS = [
     for (const { tabela, drop, col, novoNome } of CONSTRAINTS) {
       log(`--- ${tabela} ---`);
 
-      // 1. Verificar quantas linhas duplicadas existem hoje no par (organizacao_id, col)
-      // Se houver, a migration falha — precisa decidir o que fazer com elas.
+      // 1. Checar duplicatas em (organizacao_id, col)
       const dup = await client.query(`
         SELECT organizacao_id, ${col}, COUNT(*) AS c
         FROM ${tabela}
@@ -63,27 +64,12 @@ const CONSTRAINTS = [
         throw new Error(`Duplicatas em ${tabela}.${col} impedem criação da UNIQUE composta`);
       }
 
-      // 2. Drop dos UNIQUE antigos
+      // 2. Drop dos UNIQUE antigos (isolados em SAVEPOINT)
       for (const c of drop) {
-        const exists = await client.query(
-          `SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname=$1`, [c]
-        );
-        if (!exists.rows.length) {
-          log(`  • ${c} não existe — pulando drop`);
-          continue;
-        }
-        // Tenta dropar como constraint primeiro; se não for, dropa como índice
-        try {
-          await client.query(`ALTER TABLE ${tabela} DROP CONSTRAINT ${c}`);
-          log(`  ✓ dropped constraint ${c}`);
-        } catch (e) {
-          if (/does not exist|não existe/i.test(e.message)) {
-            await client.query(`DROP INDEX ${c}`);
-            log(`  ✓ dropped index ${c}`);
-          } else {
-            throw e;
-          }
-        }
+        const tipo = await dropConstraintOrIndex(client, tabela, c);
+        if (tipo === 'constraint') log(`  ✓ dropped constraint ${c}`);
+        else if (tipo === 'index') log(`  ✓ dropped index ${c}`);
+        else log(`  • ${c} não existe — pulando`);
       }
 
       // 3. Criar UNIQUE composto (parcial: ignora NULL)
@@ -105,7 +91,7 @@ const CONSTRAINTS = [
     // Validação final
     log('--- Validação ---');
     const finalCheck = await client.query(`
-      SELECT i.relname AS idx, c.relname AS tbl, ix.indisunique AS uniq,
+      SELECT i.relname AS idx, c.relname AS tbl,
              pg_get_indexdef(ix.indexrelid) AS def
       FROM pg_index ix
       JOIN pg_class c ON c.oid = ix.indrelid
@@ -120,7 +106,7 @@ const CONSTRAINTS = [
     log(`\n=== ✓ MIGRATION 022 CONCLUÍDA EM ${new Date().toISOString()} ===`);
     process.exit(0);
   } catch (e) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     log('\n=== ✗ ERRO — ROLLBACK ===');
     log('ERROR: ' + e.message);
     log('STACK: ' + e.stack);

@@ -30,15 +30,15 @@ const upload = multer({
 router.get('/', async (req, res, next) => {
   try {
     const { ag_ft, tipo, status_cadastro } = req.query;
-    const params = [];
-    const where = ['v.ativo = true'];
+    const params = [req.organizacao_id];
+    const where = ['v.ativo = true', 'v.organizacao_id = $1'];
     if (ag_ft)           { params.push(ag_ft);           where.push(`v.ag_ft = $${params.length}`); }
     if (tipo)            { params.push(tipo);            where.push(`v.tipo = $${params.length}`); }
     if (status_cadastro) { params.push(status_cadastro); where.push(`v.status_cadastro = $${params.length}`); }
     const { rows } = await db.query(
       `SELECT v.*, t.nome AS transportadora_nome
        FROM logi_veiculos v
-       LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
+       LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id AND t.organizacao_id = v.organizacao_id
        WHERE ${where.join(' AND ')} ORDER BY v.placa`, params
     );
     res.json(rows);
@@ -50,8 +50,8 @@ router.get('/:id', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT v.*, t.nome AS transportadora_nome
        FROM logi_veiculos v
-       LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id
-       WHERE v.id = $1`, [req.params.id]
+       LEFT JOIN logi_transportadoras t ON t.id = v.transportadora_id AND t.organizacao_id = v.organizacao_id
+       WHERE v.id = $1 AND v.organizacao_id = $2`, [req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
     res.json(rows[0]);
@@ -68,17 +68,16 @@ router.post('/', upload.single('crlv'), async (req, res, next) => {
     const { rows } = await db.query(
       `INSERT INTO logi_veiculos
         (transportadora_id, placa, modelo, tipo, ano, renavam, ag_ft,
-         proprietario, responsavel, crlv_arquivo_nome, crlv_arquivo_path, status_cadastro)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+         proprietario, responsavel, crlv_arquivo_nome, crlv_arquivo_path, status_cadastro, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [transportadora_id||null, placa, modelo||null, tipo, ano||null, renavam||null, ag_ft,
-       proprietario||null, responsavel||null, crlv_arquivo_nome, crlv_arquivo_path, status_cadastro]
+       proprietario||null, responsavel||null, crlv_arquivo_nome, crlv_arquivo_path, status_cadastro, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
 });
 
 // ── Pré-cadastro rápido (Supervisor) ───────────────────────
-// Cria o veículo com status 'pendente_admin' e só campos essenciais
 router.post('/pre-cadastro', async (req, res, next) => {
   try {
     const { placa, tipo, ag_ft, transportadora_id } = req.body;
@@ -87,9 +86,9 @@ router.post('/pre-cadastro', async (req, res, next) => {
     }
     const { rows } = await db.query(
       `INSERT INTO logi_veiculos
-        (placa, tipo, ag_ft, transportadora_id, status_cadastro)
-       VALUES ($1, $2, $3, $4, 'pendente_admin') RETURNING *`,
-      [placa, tipo, ag_ft, transportadora_id || null]
+        (placa, tipo, ag_ft, transportadora_id, status_cadastro, organizacao_id)
+       VALUES ($1, $2, $3, $4, 'pendente_admin', $5) RETURNING *`,
+      [placa, tipo, ag_ft, transportadora_id || null, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -124,8 +123,11 @@ router.put('/:id', upload.single('crlv'), async (req, res, next) => {
     if (!sets.length) return res.status(400).json({ error: 'Nada a atualizar' });
 
     params.push(req.params.id);
+    params.push(req.organizacao_id);
+    const idIdx = params.length - 1;
+    const orgIdx = params.length;
     const { rows } = await db.query(
-      `UPDATE logi_veiculos SET ${sets.join(',')} WHERE id=$${params.length} RETURNING *`,
+      `UPDATE logi_veiculos SET ${sets.join(',')} WHERE id=$${idIdx} AND organizacao_id=$${orgIdx} RETURNING *`,
       params
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
@@ -137,7 +139,8 @@ router.put('/:id', upload.single('crlv'), async (req, res, next) => {
 router.get('/:id/crlv', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'SELECT crlv_arquivo_path, crlv_arquivo_nome FROM logi_veiculos WHERE id=$1', [req.params.id]
+      'SELECT crlv_arquivo_path, crlv_arquivo_nome FROM logi_veiculos WHERE id=$1 AND organizacao_id=$2',
+      [req.params.id, req.organizacao_id]
     );
     if (!rows.length || !rows[0].crlv_arquivo_path) {
       return res.status(404).json({ error: 'CRLV não encontrado' });
@@ -151,7 +154,8 @@ router.get('/:id/crlv', async (req, res, next) => {
 router.patch('/:id/desativar', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      'UPDATE logi_veiculos SET ativo=false WHERE id=$1 RETURNING *', [req.params.id]
+      'UPDATE logi_veiculos SET ativo=false WHERE id=$1 AND organizacao_id=$2 RETURNING *',
+      [req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
     res.json(rows[0]);

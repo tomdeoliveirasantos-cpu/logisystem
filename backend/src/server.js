@@ -9,6 +9,7 @@ const path    = require('path');
 const db      = require('./db');
 const { authMiddleware } = require('./middleware/auth');
 const { requireTenant }  = require('./middleware/tenant');
+const { tenantContextMiddleware } = require('./db');
 
 const authRouter           = require('./routes/auth');
 const clientesRouter       = require('./routes/clientes');
@@ -49,20 +50,20 @@ app.use('/api/motorista-app',      motoristaAppRouter);
 
 // Rotas protegidas (requerem token JWT + tenant resolvido)
 // requireTenant valida que o JWT carrega organizacao_id e popula req.organizacao_id, req.perfil_na_org, req.is_super_admin
-app.use('/api/clientes',        authMiddleware, requireTenant, clientesRouter);
-app.use('/api/transportadoras', authMiddleware, requireTenant, transportadorasRouter);
-app.use('/api/veiculos',        authMiddleware, requireTenant, veiculosRouter);
-app.use('/api/motoristas',      authMiddleware, requireTenant, motoristasRouter);
-app.use('/api/ordens',          authMiddleware, requireTenant, ordensRouter);
-app.use('/api/manutencoes',     authMiddleware, requireTenant, manutencoesRouter);
-app.use('/api/fornecedores',    authMiddleware, requireTenant, fornecedoresRouter);
-app.use('/api/ajudantes',       authMiddleware, requireTenant, ajudantesRouter);
-app.use('/api/multas',          authMiddleware, requireTenant, multasRouter);
-app.use('/api/financeiro',      authMiddleware, requireTenant, financeiroRouter);
-app.use('/api/relatorios',      authMiddleware, requireTenant, relatoriosRouter);
+app.use('/api/clientes',        authMiddleware, requireTenant, tenantContextMiddleware, clientesRouter);
+app.use('/api/transportadoras', authMiddleware, requireTenant, tenantContextMiddleware, transportadorasRouter);
+app.use('/api/veiculos',        authMiddleware, requireTenant, tenantContextMiddleware, veiculosRouter);
+app.use('/api/motoristas',      authMiddleware, requireTenant, tenantContextMiddleware, motoristasRouter);
+app.use('/api/ordens',          authMiddleware, requireTenant, tenantContextMiddleware, ordensRouter);
+app.use('/api/manutencoes',     authMiddleware, requireTenant, tenantContextMiddleware, manutencoesRouter);
+app.use('/api/fornecedores',    authMiddleware, requireTenant, tenantContextMiddleware, fornecedoresRouter);
+app.use('/api/ajudantes',       authMiddleware, requireTenant, tenantContextMiddleware, ajudantesRouter);
+app.use('/api/multas',          authMiddleware, requireTenant, tenantContextMiddleware, multasRouter);
+app.use('/api/financeiro',      authMiddleware, requireTenant, tenantContextMiddleware, financeiroRouter);
+app.use('/api/relatorios',      authMiddleware, requireTenant, tenantContextMiddleware, relatoriosRouter);
 app.use('/api/parametros',      authMiddleware, parametrosRouter); // parametros é global (sem tenant)
-app.use('/api/reajustes',       authMiddleware, requireTenant, reajustesRouter);
-app.use('/api/motorista-cadastros', authMiddleware, requireTenant, cadastroAdminRouter);
+app.use('/api/reajustes',       authMiddleware, requireTenant, tenantContextMiddleware, reajustesRouter);
+app.use('/api/motorista-cadastros', authMiddleware, requireTenant, tenantContextMiddleware, cadastroAdminRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

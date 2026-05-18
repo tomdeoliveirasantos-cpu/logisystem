@@ -5,7 +5,7 @@ import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 const API = 'https://api.wsdevsoft.com/api';
 
 export default function Login() {
-  const { login, user } = useAuth();
+  const { login, user, pendingOrg } = useAuth();
   const [email, setEmail]       = useState('');
   const [senha, setSenha]       = useState('');
   const [erro, setErro]         = useState('');
@@ -42,8 +42,16 @@ export default function Login() {
     e.preventDefault();
     setErro(''); setLoading(true);
     try {
-      await login(email, senha);
-      // Após login, se tem biometria disponível mas não cadastrada, oferecer
+      const result = await login(email, senha);
+
+      // Se precisa selecionar org, o AuthContext já setou pendingOrg=true.
+      // O ProtectedApp renderiza OrgSelector nesse caso, então não precisamos
+      // fazer mais nada aqui.
+      if (result?.precisaSelecionarOrg) {
+        return;
+      }
+
+      // Login completo (1 org só) — oferecer biometria se ainda não tem
       if (bioAvailable) {
         const res = await fetch(`${API}/auth/webauthn/has-credential?email=${encodeURIComponent(email)}`);
         const data = await res.json();
@@ -84,6 +92,10 @@ export default function Login() {
       if (!verRes.ok) throw new Error(data.error || 'Falha na autenticação');
 
       localStorage.setItem('logi_token', data.token);
+      // Se 1 org só, persiste a org direto
+      if (!data.precisa_selecionar_org && data.org) {
+        localStorage.setItem('logi_org', JSON.stringify(data.org));
+      }
       window.location.reload();
     } catch(err) {
       if (err.name === 'NotAllowedError') {
@@ -100,18 +112,15 @@ export default function Login() {
   const registrarBiometria = async () => {
     try {
       const token = localStorage.getItem('logi_token');
-      
-      // 1. Pedir opções de registro
+
       const optRes = await fetch(`${API}/auth/webauthn/register-options`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
       const options = await optRes.json();
 
-      // 2. Criar credencial no dispositivo
       const regResp = await startRegistration({ optionsJSON: options });
 
-      // 3. Verificar e salvar no backend
       const verRes = await fetch(`${API}/auth/webauthn/register-verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -147,7 +156,7 @@ export default function Login() {
   });
 
   // Se acabou de fazer login e precisa oferecer biometria
-  if (showBioSetup && user) {
+  if (showBioSetup && user && !pendingOrg) {
     return (
       <div style={{
         minHeight: '100vh', background: 'linear-gradient(135deg, #EEF2FF 0%, #F0F9FF 50%, #F8F9FC 100%)',

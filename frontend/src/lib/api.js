@@ -18,9 +18,16 @@ async function req(path, opts = {}) {
     body: isFormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
   });
 
-  // Token expirado — redireciona para login
+  // Token expirado, inválido, ou sem org selecionada → relogin
   if (res.status === 401) {
+    // Tentar ler o code para distinguir motivo
+    let code = null;
+    try {
+      const errBody = await res.clone().json();
+      code = errBody?.code;
+    } catch {}
     localStorage.removeItem('logi_token');
+    localStorage.removeItem('logi_org');
     window.location.reload();
     return;
   }

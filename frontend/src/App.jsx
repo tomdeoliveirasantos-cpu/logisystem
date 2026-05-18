@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
+import OrgSelector from './components/OrgSelector';
+import OrgSwitcher from './components/OrgSwitcher';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Clientes from './pages/Clientes';
@@ -25,15 +27,21 @@ import Entregas from './pages/Entregas';
 import MobileApp from './pages/MobileApp';
 
 function UserMenu({ collapsed }) {
-  const { user, logout } = useAuth();
-  const perfilColor = { admin: '#22C55E', operador: '#60A5FA', financeiro: '#FBBF24' };
-  const perfilLabel = { admin: 'Admin', operador: 'Operador', financeiro: 'Financeiro' };
+  const { user, org, logout } = useAuth();
+  const perfilLegacy = user?.perfil;
+  const perfilNaOrg = org?.perfil_na_org;
+  const perfilColor = { admin: '#22C55E', operador: '#60A5FA', financeiro: '#FBBF24', super_admin: '#A78BFA' };
+  const perfilLabel = { admin: 'Admin', operador: 'Operador', financeiro: 'Financeiro', super_admin: 'Super Admin' };
+  const perfilEffective = perfilNaOrg || perfilLegacy;
 
   if (collapsed) return (
     <div style={{marginTop:'auto',borderTop:'1px solid rgba(255,255,255,.08)',padding:'10px 8px',display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
+      {/* Org switcher no topo (versão colapsada) */}
+      <OrgSwitcher collapsed />
+
       <div
-        style={{width:34,height:34,borderRadius:'50%',background:perfilColor[user?.perfil]||'#60A5FA',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff'}}
-        title={`${user?.nome} — ${perfilLabel[user?.perfil]}`}
+        style={{width:34,height:34,borderRadius:'50%',background:perfilColor[perfilEffective]||'#60A5FA',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff'}}
+        title={`${user?.nome} — ${perfilLabel[perfilEffective] || perfilEffective}`}
       >
         {user?.nome?.charAt(0).toUpperCase()}
       </div>
@@ -52,43 +60,50 @@ function UserMenu({ collapsed }) {
   );
 
   return (
-    <div style={{marginTop:'auto',padding:'10px 12px',borderTop:'1px solid rgba(255,255,255,.08)'}}>
+    <div style={{marginTop:'auto',padding:'10px 0 10px',borderTop:'1px solid rgba(255,255,255,.08)'}}>
+      {/* Org switcher (acima das infos do usuário) */}
+      <div style={{ paddingTop: 4, paddingBottom: 4 }}>
+        <OrgSwitcher />
+      </div>
+
       {/* Info do usuário */}
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'6px 8px',borderRadius:10,marginBottom:6}}>
-        <div style={{width:34,height:34,borderRadius:'50%',background:perfilColor[user?.perfil]||'#60A5FA',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff',flexShrink:0}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'6px 20px',marginBottom:6}}>
+        <div style={{width:34,height:34,borderRadius:'50%',background:perfilColor[perfilEffective]||'#60A5FA',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#fff',flexShrink:0}}>
           {user?.nome?.charAt(0).toUpperCase()}
         </div>
         <div style={{flex:1,overflow:'hidden'}}>
           <div style={{fontSize:12,fontWeight:600,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.nome}</div>
-          <div style={{fontSize:10,color:perfilColor[user?.perfil]||'#9BAABB',fontWeight:500}}>{perfilLabel[user?.perfil]}</div>
+          <div style={{fontSize:10,color:perfilColor[perfilEffective]||'#9BAABB',fontWeight:500}}>{perfilLabel[perfilEffective] || perfilEffective}</div>
         </div>
       </div>
 
-      {/* Botão Sair — sempre visível */}
-      <button
-        onClick={logout}
-        style={{
-          width:'100%', padding:'9px 12px',
-          background:'rgba(255,255,255,.06)',
-          border:'1px solid rgba(255,255,255,.1)',
-          borderRadius:9, display:'flex', alignItems:'center', gap:8,
-          fontSize:13, fontWeight:500, color:'rgba(255,255,255,.65)',
-          cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
-        }}
-        onMouseEnter={e=>{e.currentTarget.style.background='rgba(220,38,38,.2)';e.currentTarget.style.borderColor='rgba(220,38,38,.4)';e.currentTarget.style.color='#FCA5A5';}}
-        onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.06)';e.currentTarget.style.borderColor='rgba(255,255,255,.1)';e.currentTarget.style.color='rgba(255,255,255,.65)';}}
-      >
-        <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
-        </svg>
-        Sair da conta
-      </button>
+      {/* Botão Sair */}
+      <div style={{ padding: '0 12px' }}>
+        <button
+          onClick={logout}
+          style={{
+            width:'100%', padding:'9px 12px',
+            background:'rgba(255,255,255,.06)',
+            border:'1px solid rgba(255,255,255,.1)',
+            borderRadius:9, display:'flex', alignItems:'center', gap:8,
+            fontSize:13, fontWeight:500, color:'rgba(255,255,255,.65)',
+            cursor:'pointer', fontFamily:'inherit', transition:'all .15s',
+          }}
+          onMouseEnter={e=>{e.currentTarget.style.background='rgba(220,38,38,.2)';e.currentTarget.style.borderColor='rgba(220,38,38,.4)';e.currentTarget.style.color='#FCA5A5';}}
+          onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.06)';e.currentTarget.style.borderColor='rgba(255,255,255,.1)';e.currentTarget.style.color='rgba(255,255,255,.65)';}}
+        >
+          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+          Sair da conta
+        </button>
+      </div>
     </div>
   );
 }
 
 function ProtectedApp() {
-  const { user, loading, podeAcessar } = useAuth();
+  const { user, org, pendingOrg, loading, podeAcessar } = useAuth();
   const [collapsed, setCollapsed] = useState(() => window.innerWidth <= 900);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -110,7 +125,11 @@ function ProtectedApp() {
     </div>
   );
 
+  // Sem usuário → Login
   if (!user) return <Login />;
+
+  // Usuário logado mas precisa escolher org → OrgSelector
+  if (pendingOrg || !org) return <OrgSelector />;
 
   const isMobile = window.innerWidth <= 640;
 
@@ -134,6 +153,15 @@ function ProtectedApp() {
               <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
             <span style={{fontSize:15,fontWeight:600,color:'#1A2740'}}>LogiSystem</span>
+            <span style={{
+              marginLeft:'auto', fontSize:11, fontWeight:600,
+              padding:'4px 9px', borderRadius:6,
+              background: org?.is_wsdevsoft ? '#EEF2FF' : '#F0FDF4',
+              color: org?.is_wsdevsoft ? '#4F46E5' : '#0F6E56',
+              maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {org?.nome}
+            </span>
           </div>
 
           <Routes>

@@ -3,7 +3,7 @@ const bcrypt   = require('bcrypt');
 const jwt      = require('jsonwebtoken');
 const db       = require('../db');
 const { authMiddleware, requirePerfil, SECRET } = require('../middleware/auth');
-const { getUserOrgs, validarVinculo } = require('../middleware/tenant');
+const { getUserOrgs, validarVinculo, requireTenant, requirePerfilOrg } = require('../middleware/tenant');
 
 const crypto = require('crypto');
 
@@ -161,54 +161,137 @@ router.post('/select-org', authMiddleware, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── Gestão de usuários (só admin) ──────────────────────────
-// GET /api/auth/usuarios
-router.get('/usuarios', authMiddleware, requirePerfil('admin'), async (req, res, next) => {
+// ── Gestão de usuários (só admin da org) ──────────────────
+// GET /api/auth/usuarios — lista apenas usuários vinculados à org ativa
+//   Super-admin (WsDevSoft) vê todos os usuários do sistema.
+router.get('/usuarios', authMiddleware, requireTenant, requirePerfilOrg('admin', 'super_admin'), async (req, res, next) => {
   try {
+    if (req.is_super_admin) {
+      // Super-admin: lista global com info de quantas orgs cada usuário tem
+      const { rows } = await db.query(
+        `SELECT u.id, u.nome, u.email, u.perfil, u.ativo, u.ultimo_login, u.created_at,
+                (SELECT COUNT(*)::int FROM logi_usuarios_orgs uo
+                  WHERE uo.usuario_id = u.id AND uo.ativo = TRUE) AS qtd_orgs
+         FROM logi_usuarios u
+         ORDER BY u.nome`
+      );
+      return res.json(rows);
+    }
+    // Admin da org: só vê usuários com vínculo ativo nessa org, e o perfil_na_org
     const { rows } = await db.query(
-      'SELECT id,nome,email,perfil,ativo,ultimo_login,created_at FROM logi_usuarios ORDER BY nome'
+      `SELECT u.id, u.nome, u.email, u.perfil, u.ativo, u.ultimo_login, u.created_at,
+              uo.perfil_na_org
+         FROM logi_usuarios u
+         JOIN logi_usuarios_orgs uo ON uo.usuario_id = u.id
+        WHERE uo.organizacao_id = $1 AND uo.ativo = TRUE
+        ORDER BY u.nome`,
+      [req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
-// POST /api/auth/usuarios
-router.post('/usuarios', authMiddleware, requirePerfil('admin'), async (req, res, next) => {
+// POST /api/auth/usuarios — cria usuário E vincula à org ativa (transação)
+//   body: { nome, email, senha, perfil, perfil_na_org? }
+//   Se perfil_na_org não vier, usa perfil. Super-admin pode passar organizacao_id
+//   explícito para criar usuário em outra org.
+router.post('/usuarios', authMiddleware, requireTenant, requirePerfilOrg('admin', 'super_admin'), async (req, res, next) => {
+  const client = await db.pool.connect();
   try {
-    const { nome, email, senha, perfil } = req.body;
+    const { nome, email, senha, perfil, perfil_na_org, organizacao_id: orgIdBody } = req.body;
     if (!nome || !email || !senha) return res.status(422).json({ error: 'Nome, e-mail e senha obrigatórios' });
+
+    // Por padrão vincula à org ativa. Super-admin pode escolher outra org via body.
+    const orgDestino = (req.is_super_admin && orgIdBody) ? orgIdBody : req.organizacao_id;
+    const perfilOrg = perfil_na_org || perfil || 'operador';
+
+    await client.query('BEGIN');
+
+    // 1) Cria o usuário
     const hash = await bcrypt.hash(senha, 10);
-    const { rows } = await db.query(
-      `INSERT INTO logi_usuarios (nome,email,senha_hash,perfil) VALUES ($1,$2,$3,$4)
-       RETURNING id,nome,email,perfil,ativo,created_at`,
+    const { rows: usrRows } = await client.query(
+      `INSERT INTO logi_usuarios (nome, email, senha_hash, perfil)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, nome, email, perfil, ativo, created_at`,
       [nome, email.toLowerCase(), hash, perfil || 'operador']
     );
-    res.status(201).json(rows[0]);
+    const novoUser = usrRows[0];
+
+    // 2) Cria o vínculo com a org
+    await client.query(
+      `INSERT INTO logi_usuarios_orgs (usuario_id, organizacao_id, perfil_na_org, ativo)
+       VALUES ($1, $2, $3, TRUE)`,
+      [novoUser.id, orgDestino, perfilOrg]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ ...novoUser, perfil_na_org: perfilOrg, organizacao_id: orgDestino });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') return res.status(422).json({ error: 'E-mail já cadastrado' });
     next(err);
+  } finally {
+    client.release();
   }
 });
 
-// PUT /api/auth/usuarios/:id
-router.put('/usuarios/:id', authMiddleware, requirePerfil('admin'), async (req, res, next) => {
+// PUT /api/auth/usuarios/:id — atualiza dados do usuário E perfil_na_org
+//   Só permite editar usuários que têm vínculo com a org ativa
+//   (super-admin pode editar qualquer um)
+router.put('/usuarios/:id', authMiddleware, requireTenant, requirePerfilOrg('admin', 'super_admin'), async (req, res, next) => {
+  const client = await db.pool.connect();
   try {
-    const { nome, email, perfil, ativo, senha } = req.body;
+    const { nome, email, perfil, ativo, senha, perfil_na_org } = req.body;
+
+    // 1) Valida que o alvo está vinculado à org ativa (a menos que seja super-admin)
+    if (!req.is_super_admin) {
+      const vinc = await client.query(
+        `SELECT 1 FROM logi_usuarios_orgs
+          WHERE usuario_id = $1 AND organizacao_id = $2 AND ativo = TRUE`,
+        [req.params.id, req.organizacao_id]
+      );
+      if (!vinc.rows.length) {
+        return res.status(404).json({ error: 'Usuário não encontrado nesta organização' });
+      }
+    }
+
+    await client.query('BEGIN');
+
+    // 2) Atualiza dados globais do usuário
     let q, params;
     if (senha) {
       const hash = await bcrypt.hash(senha, 10);
-      q = `UPDATE logi_usuarios SET nome=$1,email=$2,perfil=$3,ativo=$4,senha_hash=$5,updated_at=NOW()
-           WHERE id=$6 RETURNING id,nome,email,perfil,ativo`;
+      q = `UPDATE logi_usuarios SET nome=$1, email=$2, perfil=$3, ativo=$4, senha_hash=$5, updated_at=NOW()
+           WHERE id=$6 RETURNING id, nome, email, perfil, ativo`;
       params = [nome, email.toLowerCase(), perfil, ativo, hash, req.params.id];
     } else {
-      q = `UPDATE logi_usuarios SET nome=$1,email=$2,perfil=$3,ativo=$4,updated_at=NOW()
-           WHERE id=$5 RETURNING id,nome,email,perfil,ativo`;
+      q = `UPDATE logi_usuarios SET nome=$1, email=$2, perfil=$3, ativo=$4, updated_at=NOW()
+           WHERE id=$5 RETURNING id, nome, email, perfil, ativo`;
       params = [nome, email.toLowerCase(), perfil, ativo, req.params.id];
     }
-    const { rows } = await db.query(q, params);
-    if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
-    res.json(rows[0]);
-  } catch (err) { next(err); }
+    const { rows } = await client.query(q, params);
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Não encontrado' });
+    }
+
+    // 3) Se mudou perfil_na_org, atualiza o vínculo
+    if (perfil_na_org) {
+      await client.query(
+        `UPDATE logi_usuarios_orgs SET perfil_na_org = $1
+          WHERE usuario_id = $2 AND organizacao_id = $3`,
+        [perfil_na_org, req.params.id, req.organizacao_id]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ ...rows[0], perfil_na_org: perfil_na_org || undefined });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 // PATCH /api/auth/usuarios/senha — troca a própria senha
@@ -225,13 +308,57 @@ router.patch('/usuarios/senha', authMiddleware, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// DELETE /api/auth/usuarios/:id (soft delete)
-router.delete('/usuarios/:id', authMiddleware, requirePerfil('admin'), async (req, res, next) => {
+// DELETE /api/auth/usuarios/:id — remove usuário desta org
+//   Estratégia: desativa o vínculo da org ativa (logi_usuarios_orgs.ativo=false).
+//   Se o usuário ficar sem nenhum vínculo ativo, desativa também o usuário global.
+//   Super-admin pode opcionalmente desativar globalmente passando ?global=1.
+router.delete('/usuarios/:id', authMiddleware, requireTenant, requirePerfilOrg('admin', 'super_admin'), async (req, res, next) => {
+  const client = await db.pool.connect();
   try {
-    if (req.params.id === req.user.id) return res.status(422).json({ error: 'Não pode desativar a si mesmo' });
-    await db.query('UPDATE logi_usuarios SET ativo=false,updated_at=NOW() WHERE id=$1', [req.params.id]);
+    if (req.params.id === req.user.id) {
+      return res.status(422).json({ error: 'Não pode desativar a si mesmo' });
+    }
+
+    await client.query('BEGIN');
+
+    if (req.is_super_admin && req.query.global === '1') {
+      // Modo super-admin: desativa global E todos os vínculos
+      await client.query('UPDATE logi_usuarios SET ativo=false, updated_at=NOW() WHERE id=$1', [req.params.id]);
+      await client.query('UPDATE logi_usuarios_orgs SET ativo=false WHERE usuario_id=$1', [req.params.id]);
+      await client.query('COMMIT');
+      return res.status(204).send();
+    }
+
+    // Modo normal: só desativa o vínculo desta org
+    const upd = await client.query(
+      `UPDATE logi_usuarios_orgs SET ativo=false
+        WHERE usuario_id=$1 AND organizacao_id=$2 AND ativo=TRUE
+        RETURNING usuario_id`,
+      [req.params.id, req.organizacao_id]
+    );
+    if (!upd.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Usuário não estava vinculado a esta organização' });
+    }
+
+    // Se não restou nenhum vínculo ativo, desativa o usuário global também
+    const { rows: restante } = await client.query(
+      `SELECT COUNT(*)::int AS c FROM logi_usuarios_orgs
+        WHERE usuario_id = $1 AND ativo = TRUE`,
+      [req.params.id]
+    );
+    if (restante[0].c === 0) {
+      await client.query('UPDATE logi_usuarios SET ativo=false, updated_at=NOW() WHERE id=$1', [req.params.id]);
+    }
+
+    await client.query('COMMIT');
     res.status(204).send();
-  } catch (err) { next(err); }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 // ══════════════════════════════════════════════════

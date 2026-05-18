@@ -12,6 +12,7 @@ import Ordens from './pages/Ordens';
 import Relatorios from './pages/Relatorios';
 import Usuarios from './pages/Usuarios';
 import Parametros from './pages/Parametros';
+import ParametrosCadastroPublico from './pages/ParametrosCadastroPublico';
 import TabelaFretesPage from './pages/TabelaFretes';
 import Romaneio from './pages/Romaneio';
 import Importacao from './pages/Importacao';
@@ -185,6 +186,7 @@ function ProtectedApp() {
             <Route path="/cadastros-motorista" element={podeAcessar('motoristas') ? <CadastrosMotorista /> : <Navigate to="/" />} />
             <Route path="/usuarios" element={podeAcessar('usuarios') ? <Usuarios /> : <Navigate to="/" />} />
             <Route path="/parametros" element={podeAcessar('usuarios') ? <Parametros /> : <Navigate to="/" />} />
+            <Route path="/parametros-cadastro-publico" element={podeAcessar('usuarios') ? <ParametrosCadastroPublico /> : <Navigate to="/" />} />
           </Routes>
         </div>
       </div>

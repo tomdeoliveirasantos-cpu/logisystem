@@ -21,6 +21,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         { to: '/motoristas',      icon: '👤', label: 'Colaboradores',     mod: 'motoristas' },
         { to: '/fornecedores',    icon: '🏪', label: 'Fornecedores',      mod: 'manutencoes' },
         { to: '/cadastros-motorista', icon: '📋', label: 'Cadastros',         mod: 'motoristas' },
+        { to: '/parametros-cadastro-publico', icon: '⚙️', label: 'Parâm. Cadastro Público', mod: 'usuarios' },
       ],
     },
     {

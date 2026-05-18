@@ -182,23 +182,23 @@ publicRouter.post('/:token', docFieldsSafe, async (req, res, next) => {
       `INSERT INTO logi_motorista_cadastros (
         convite_id,
         nome, cpf, rg, cnh_numero, cnh_categoria, cnh_validade,
-        endereco, bairro, cidade, estado, cep, telefone, email,
-        razao_social, cnpj, endereco_pj, bairro_pj, cidade_pj, estado_pj, cep_pj, data_abertura,
+        endereco, numero, complemento, bairro, cidade, estado, cep, telefone, email,
+        razao_social, cnpj, endereco_pj, numero_pj, complemento_pj, bairro_pj, cidade_pj, estado_pj, cep_pj, data_abertura,
         veiculo_placa, veiculo_modelo, veiculo_ano, veiculo_rntrc,
         banco, agencia, conta, tipo_conta, pix,
         doc_cnh, doc_cnpj_contrato, doc_rntrc, doc_comprovante_endereco,
         assinatura_path, assinatura_ip, status, organizacao_id
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-        $15,$16,$17,$18,$19,$20,$21,$22,
-        $23,$24,$25,$26,$27,$28,$29,$30,$31,
-        $32,$33,$34,$35,$36,$37,'pendente',$38
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+        $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
+        $27,$28,$29,$30,$31,$32,$33,$34,$35,
+        $36,$37,$38,$39,$40,$41,'pendente',$42
       ) RETURNING *`,
       [
         conviteId,
         data.nome, data.cpf, data.rg, data.cnh_numero, data.cnh_categoria, data.cnh_validade || null,
-        data.endereco, data.bairro, data.cidade, data.estado, data.cep, data.telefone, data.email,
-        data.razao_social, data.cnpj, data.endereco_pj, data.bairro_pj, data.cidade_pj, data.estado_pj, data.cep_pj, data.data_abertura || null,
+        data.endereco, data.numero, data.complemento, data.bairro, data.cidade, data.estado, data.cep, data.telefone, data.email,
+        data.razao_social, data.cnpj, data.endereco_pj, data.numero_pj, data.complemento_pj, data.bairro_pj, data.cidade_pj, data.estado_pj, data.cep_pj, data.data_abertura || null,
         data.veiculo_placa, data.veiculo_modelo, data.veiculo_ano, data.veiculo_rntrc,
         data.banco, data.agencia, data.conta, data.tipo_conta, data.pix,
         arquivos.cnh || null, arquivos.cnpj_contrato_social || null, arquivos.rntrc || null, arquivos.comprovante_endereco || null,

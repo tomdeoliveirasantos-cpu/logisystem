@@ -277,31 +277,77 @@ export default function CadastroMotoristaPublico() {
     </div>
   );
 
+  // Comprime imagem grande via canvas: reduz para máximo 1600px no maior lado e qualidade 0.75
+  // Retorna File. PDFs e arquivos pequenos passam direto.
+  const compressImage = (file) => new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return resolve(file);
+    // Imagens pequenas (<1MB) não precisam comprimir
+    if (file.size < 1024 * 1024) return resolve(file);
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1600;
+        let { width: w, height: h } = img;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          if (w >= h) { h = Math.round(h * MAX_DIM / w); w = MAX_DIM; }
+          else        { w = Math.round(w * MAX_DIM / h); h = MAX_DIM; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          if (!blob) return reject(new Error('Falha ao comprimir imagem'));
+          // Mantém o nome original com extensão .jpg
+          const nomeBase = file.name.replace(/\.(jpe?g|png|webp|heic|heif)$/i, '');
+          const novoArquivo = new File([blob], `${nomeBase}.jpg`, { type: 'image/jpeg' });
+          resolve(novoArquivo);
+        }, 'image/jpeg', 0.75);
+      };
+      img.onerror = () => reject(new Error('Falha ao carregar imagem'));
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+    reader.readAsDataURL(file);
+  });
+
   const FileInput = ({ field, label }) => {
     const hasFile = !!files[field];
-    const handleFile = (e) => {
+    const [processando, setProcessando] = useState(false);
+    const handleFile = async (e) => {
       const f = e.target.files[0];
       if (!f) return;
-      // Limite generoso de 8MB (servidor aceita até 10MB)
-      const MAX_MB = 8;
-      if (f.size > MAX_MB * 1024 * 1024) {
-        alert(`Arquivo muito grande: ${(f.size/1024/1024).toFixed(1)}MB.\nO limite é ${MAX_MB}MB. Tire uma nova foto com qualidade menor ou comprima o PDF.`);
-        e.target.value = '';
-        return;
+      try {
+        setProcessando(true);
+        // Comprime se for imagem grande
+        const arquivoFinal = await compressImage(f);
+        // Validação de tamanho final (após compressão)
+        const MAX_MB = 8;
+        if (arquivoFinal.size > MAX_MB * 1024 * 1024) {
+          alert(`Arquivo ainda muito grande após compressão: ${(arquivoFinal.size/1024/1024).toFixed(1)}MB.\nO limite é ${MAX_MB}MB. Por favor, tire uma foto com qualidade menor ou comprima o PDF.`);
+          e.target.value = '';
+          return;
+        }
+        setFiles(prev => ({...prev, [field]: arquivoFinal}));
+      } catch (err) {
+        alert('Erro ao processar arquivo: ' + err.message);
+      } finally {
+        setProcessando(false);
       }
-      setFiles(prev => ({...prev, [field]: f}));
     };
     return (
       <div>
         <label style={s.label}>{label}</label>
-        <label style={{...s.fileBtn, ...(hasFile ? s.fileOk : {})}}>
+        <label style={{...s.fileBtn, ...(hasFile ? s.fileOk : {}), ...(processando ? { opacity: 0.6, pointerEvents: 'none' } : {})}}>
           <span>
-            {hasFile
-              ? `✓ ${files[field].name} (${(files[field].size/1024/1024).toFixed(1)}MB)`
-              : '📎 Selecionar arquivo (PDF, JPG, PNG — máx 8MB)'}
+            {processando ? '⏳ Processando imagem...' :
+             hasFile ? `✓ ${files[field].name} (${(files[field].size/1024/1024).toFixed(1)}MB)` :
+             '📎 Selecionar arquivo (PDF, JPG, PNG)'}
           </span>
           <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{display:'none'}}
-            onChange={handleFile} />
+            onChange={handleFile} disabled={processando} />
         </label>
       </div>
     );
@@ -399,7 +445,15 @@ export default function CadastroMotoristaPublico() {
               )}
               {!isHidden('endereco') && (
                 <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Endereço','endereco')}</label>
-                  <input style={s.input} value={form.endereco||''} onChange={e=>set('endereco',e.target.value)} placeholder="Rua, número" /></div>
+                  <input style={s.input} value={form.endereco||''} onChange={e=>set('endereco',e.target.value)} placeholder="Rua / Avenida" /></div>
+              )}
+              {!isHidden('numero') && (
+                <div><label style={s.label}>{mark('Número','numero')}</label>
+                  <input style={s.input} value={form.numero||''} onChange={e=>set('numero',e.target.value)} placeholder="Nº" /></div>
+              )}
+              {!isHidden('complemento') && (
+                <div><label style={s.label}>{mark('Complemento','complemento')}</label>
+                  <input style={s.input} value={form.complemento||''} onChange={e=>set('complemento',e.target.value)} placeholder="Apto, bloco..." /></div>
               )}
               {!isHidden('bairro') && (
                 <div><label style={s.label}>{mark('Bairro','bairro')}</label>
@@ -443,6 +497,14 @@ export default function CadastroMotoristaPublico() {
               {!isHidden('endereco_pj') && (
                 <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Endereço PJ','endereco_pj')}</label>
                   <input style={s.input} value={form.endereco_pj||''} onChange={e=>set('endereco_pj',e.target.value)} placeholder="Endereço da empresa" /></div>
+              )}
+              {!isHidden('numero_pj') && (
+                <div><label style={s.label}>{mark('Número PJ','numero_pj')}</label>
+                  <input style={s.input} value={form.numero_pj||''} onChange={e=>set('numero_pj',e.target.value)} placeholder="Nº" /></div>
+              )}
+              {!isHidden('complemento_pj') && (
+                <div><label style={s.label}>{mark('Complemento PJ','complemento_pj')}</label>
+                  <input style={s.input} value={form.complemento_pj||''} onChange={e=>set('complemento_pj',e.target.value)} placeholder="Sala, conjunto..." /></div>
               )}
               {!isHidden('bairro_pj') && (
                 <div><label style={s.label}>{mark('Bairro PJ','bairro_pj')}</label>

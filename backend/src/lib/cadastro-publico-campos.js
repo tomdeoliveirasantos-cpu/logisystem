@@ -19,6 +19,8 @@ const CAMPOS = [
   { chave: 'cep',              label: 'CEP',                  passo: 0, grupo: 'Endereço Residencial', default: 'opcional' },
   { chave: 'estado',           label: 'Estado',               passo: 0, grupo: 'Endereço Residencial', default: 'obrigatorio' },
   { chave: 'endereco',         label: 'Endereço',             passo: 0, grupo: 'Endereço Residencial', default: 'obrigatorio' },
+  { chave: 'numero',           label: 'Número',               passo: 0, grupo: 'Endereço Residencial', default: 'obrigatorio' },
+  { chave: 'complemento',      label: 'Complemento',          passo: 0, grupo: 'Endereço Residencial', default: 'opcional' },
   { chave: 'bairro',           label: 'Bairro',               passo: 0, grupo: 'Endereço Residencial', default: 'opcional' },
   { chave: 'cidade',           label: 'Cidade',               passo: 0, grupo: 'Endereço Residencial', default: 'obrigatorio' },
 
@@ -29,6 +31,8 @@ const CAMPOS = [
   { chave: 'cep_pj',           label: 'CEP PJ',               passo: 1, grupo: 'Endereço PJ',     default: 'opcional' },
   { chave: 'estado_pj',        label: 'Estado PJ',            passo: 1, grupo: 'Endereço PJ',     default: 'obrigatorio' },
   { chave: 'endereco_pj',      label: 'Endereço PJ',          passo: 1, grupo: 'Endereço PJ',     default: 'obrigatorio' },
+  { chave: 'numero_pj',        label: 'Número PJ',            passo: 1, grupo: 'Endereço PJ',     default: 'obrigatorio' },
+  { chave: 'complemento_pj',   label: 'Complemento PJ',       passo: 1, grupo: 'Endereço PJ',     default: 'opcional' },
   { chave: 'bairro_pj',        label: 'Bairro PJ',            passo: 1, grupo: 'Endereço PJ',     default: 'opcional' },
   { chave: 'cidade_pj',        label: 'Cidade PJ',            passo: 1, grupo: 'Endereço PJ',     default: 'obrigatorio' },
 

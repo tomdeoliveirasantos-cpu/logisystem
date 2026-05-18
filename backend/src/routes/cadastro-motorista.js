@@ -4,10 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const db = require('../db');
-const { authMiddleware } = require('../middleware/auth');
 
 // ══════════════════════════════════════════════════════
 // ROUTER PÚBLICO — formulário do motorista (sem auth)
+//
+// O escopo de organização é determinado pelo CONVITE
+// (cada convite carrega organizacao_id e é descoberto pelo token na URL).
 // ══════════════════════════════════════════════════════
 const publicRouter = express.Router();
 
@@ -51,15 +53,22 @@ const docFields = upload.fields([
 publicRouter.get('/:token', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, token, status, nome_motorista, expires_at
-       FROM logi_cadastro_convites WHERE token = $1`,
+      `SELECT cc.id, cc.token, cc.status, cc.nome_motorista, cc.expires_at,
+              cc.organizacao_id, o.nome AS organizacao_nome
+       FROM logi_cadastro_convites cc
+       LEFT JOIN logi_organizacoes o ON o.id = cc.organizacao_id
+       WHERE cc.token = $1`,
       [req.params.token]
     );
     if (!rows.length) return res.status(404).json({ error: 'Convite não encontrado' });
     const convite = rows[0];
     if (convite.status === 'preenchido') return res.status(400).json({ error: 'Este formulário já foi preenchido' });
     if (convite.expires_at && new Date(convite.expires_at) < new Date()) return res.status(400).json({ error: 'Este convite expirou' });
-    res.json({ valid: true, nome_motorista: convite.nome_motorista });
+    res.json({
+      valid: true,
+      nome_motorista: convite.nome_motorista,
+      organizacao_nome: convite.organizacao_nome,
+    });
   } catch (err) { next(err); }
 });
 
@@ -67,7 +76,7 @@ publicRouter.get('/:token', async (req, res, next) => {
 publicRouter.post('/:token', docFields, async (req, res, next) => {
   try {
     const { rows: convites } = await db.query(
-      `SELECT id, status, expires_at FROM logi_cadastro_convites WHERE token = $1`,
+      `SELECT id, status, expires_at, organizacao_id FROM logi_cadastro_convites WHERE token = $1`,
       [req.params.token]
     );
     if (!convites.length) return res.status(404).json({ error: 'Convite não encontrado' });
@@ -75,6 +84,11 @@ publicRouter.post('/:token', docFields, async (req, res, next) => {
     if (convites[0].expires_at && new Date(convites[0].expires_at) < new Date()) return res.status(400).json({ error: 'Convite expirado' });
 
     const conviteId = convites[0].id;
+    const organizacaoId = convites[0].organizacao_id;
+    if (!organizacaoId) {
+      return res.status(500).json({ error: 'Convite sem organização vinculada — contate o suporte.' });
+    }
+
     const data = JSON.parse(req.body.dados || '{}');
 
     const arquivos = {};
@@ -93,12 +107,12 @@ publicRouter.post('/:token', docFields, async (req, res, next) => {
         veiculo_placa, veiculo_modelo, veiculo_ano, veiculo_rntrc,
         banco, agencia, conta, tipo_conta, pix,
         doc_cnh, doc_cnpj_contrato, doc_rntrc, doc_comprovante_endereco,
-        assinatura_path, assinatura_ip, status
+        assinatura_path, assinatura_ip, status, organizacao_id
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
         $15,$16,$17,$18,$19,$20,$21,$22,
         $23,$24,$25,$26,$27,$28,$29,$30,$31,
-        $32,$33,$34,$35,$36,$37,'pendente'
+        $32,$33,$34,$35,$36,$37,'pendente',$38
       ) RETURNING *`,
       [
         conviteId,
@@ -109,6 +123,7 @@ publicRouter.post('/:token', docFields, async (req, res, next) => {
         data.banco, data.agencia, data.conta, data.tipo_conta, data.pix,
         arquivos.cnh || null, arquivos.cnpj_contrato_social || null, arquivos.rntrc || null, arquivos.comprovante_endereco || null,
         arquivos.assinatura || null, req.headers['x-forwarded-for'] || req.ip,
+        organizacaoId,
       ]
     );
 
@@ -122,34 +137,40 @@ publicRouter.post('/:token', docFields, async (req, res, next) => {
 });
 
 // ══════════════════════════════════════════════════════
-// ROUTER PROTEGIDO — gestão interna (com auth via server.js)
+// ROUTER PROTEGIDO — gestão interna
+// requireTenant aplicado no server.js → req.organizacao_id disponível
 // ══════════════════════════════════════════════════════
 const adminRouter = express.Router();
 
-// GET / — Listar cadastros
+// GET / — Listar cadastros da org
 adminRouter.get('/', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT mc.*, cc.token, cc.nome_motorista AS convite_nome
        FROM logi_motorista_cadastros mc
-       JOIN logi_cadastro_convites cc ON cc.id = mc.convite_id
-       ORDER BY mc.created_at DESC`
+       JOIN logi_cadastro_convites cc ON cc.id = mc.convite_id AND cc.organizacao_id = mc.organizacao_id
+       WHERE mc.organizacao_id = $1
+       ORDER BY mc.created_at DESC`,
+      [req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
-// GET /convites/todos — Listar convites
+// GET /convites/todos — Listar convites da org
 adminRouter.get('/convites/todos', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT * FROM logi_cadastro_convites ORDER BY created_at DESC`
+      `SELECT * FROM logi_cadastro_convites
+       WHERE organizacao_id = $1
+       ORDER BY created_at DESC`,
+      [req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
-// POST /convites/gerar — Gerar novo convite
+// POST /convites/gerar — Gerar novo convite vinculado à org ativa
 adminRouter.post('/convites/gerar', async (req, res, next) => {
   try {
     const { nome_motorista } = req.body;
@@ -157,9 +178,9 @@ adminRouter.post('/convites/gerar', async (req, res, next) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
     const { rows } = await db.query(
-      `INSERT INTO logi_cadastro_convites (token, nome_motorista, criado_por, expires_at)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [token, nome_motorista || null, req.user?.nome || 'sistema', expiresAt]
+      `INSERT INTO logi_cadastro_convites (token, nome_motorista, criado_por, expires_at, organizacao_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [token, nome_motorista || null, req.user?.nome || 'sistema', expiresAt, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -171,9 +192,9 @@ adminRouter.get('/:id', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT mc.*, cc.token
        FROM logi_motorista_cadastros mc
-       JOIN logi_cadastro_convites cc ON cc.id = mc.convite_id
-       WHERE mc.id = $1`,
-      [req.params.id]
+       JOIN logi_cadastro_convites cc ON cc.id = mc.convite_id AND cc.organizacao_id = mc.organizacao_id
+       WHERE mc.id = $1 AND mc.organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Cadastro não encontrado' });
     res.json(rows[0]);
@@ -194,8 +215,8 @@ adminRouter.patch('/:id/validar', async (req, res, next) => {
         validado_em = CASE WHEN $5 = 'aprovado' THEN NOW() ELSE validado_em END,
         validado_por = CASE WHEN $5 = 'aprovado' THEN $6 ELSE validado_por END,
         updated_at = NOW()
-       WHERE id = $7 RETURNING *`,
-      [check_cnh, check_cnpj, check_rntrc, check_endereco, status, req.user?.nome || 'sistema', req.params.id]
+       WHERE id = $7 AND organizacao_id = $8 RETURNING *`,
+      [check_cnh, check_cnpj, check_rntrc, check_endereco, status, req.user?.nome || 'sistema', req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Cadastro não encontrado' });
     res.json(rows[0]);
@@ -206,15 +227,17 @@ adminRouter.patch('/:id/validar', async (req, res, next) => {
 adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT mc.*, cc.token
+      `SELECT mc.*, cc.token, o.nome AS organizacao_nome
        FROM logi_motorista_cadastros mc
-       JOIN logi_cadastro_convites cc ON cc.id = mc.convite_id
-       WHERE mc.id = $1`,
-      [req.params.id]
+       JOIN logi_cadastro_convites cc ON cc.id = mc.convite_id AND cc.organizacao_id = mc.organizacao_id
+       LEFT JOIN logi_organizacoes o ON o.id = mc.organizacao_id
+       WHERE mc.id = $1 AND mc.organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Cadastro não encontrado' });
 
     const cad = rows[0];
+    const contratante = cad.organizacao_nome || 'CONTRATANTE';
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 60 });
 
@@ -230,7 +253,7 @@ adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
     doc.text('Pelo presente instrumento particular, de um lado:');
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold').text('CONTRATANTE: ', { continued: true });
-    doc.font('Helvetica').text('WsDevSoft Logística, pessoa jurídica de direito privado, doravante denominada CONTRATANTE.');
+    doc.font('Helvetica').text(`${contratante}, pessoa jurídica de direito privado, doravante denominada CONTRATANTE.`);
     doc.moveDown(0.5);
     doc.text('E, de outro lado:');
     doc.moveDown(0.5);
@@ -314,7 +337,7 @@ adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
     doc.font('Helvetica').fontSize(8).text(`CPF: ${cad.cpf || '—'} | IP: ${cad.assinatura_ip || '—'}`, { align: 'center' });
     doc.moveDown(2);
     doc.text('_____________________________________________', { align: 'center' });
-    doc.font('Helvetica-Bold').fontSize(9).text('CONTRATANTE', { align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).text(contratante, { align: 'center' });
 
     doc.end();
   } catch (err) { next(err); }

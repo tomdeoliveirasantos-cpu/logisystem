@@ -51,8 +51,8 @@ export default function CadastrosMotorista() {
   const enviarWhatsApp = (token, nomeMotorista) => {
     const link = `${FRONTEND_URL}/cadastro-motorista/${token}`;
     const msg = nomeMotorista
-      ? `Olá ${nomeMotorista}! Segue o link para preencher seu cadastro de motorista:\n\n${link}`
-      : `Olá! Segue o link para preencher seu cadastro de motorista:\n\n${link}`;
+      ? `Olá ${nomeMotorista}! Segue o link para preencher seu cadastro de colaborador:\n\n${link}`
+      : `Olá! Segue o link para preencher seu cadastro de colaborador:\n\n${link}`;
     const encoded = encodeURIComponent(msg);
     window.open(`https://wa.me/?text=${encoded}`, '_blank');
   };
@@ -100,7 +100,7 @@ export default function CadastrosMotorista() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `contrato_${nome || 'motorista'}.pdf`;
+      a.download = `contrato_${nome || 'colaborador'}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch(e) { showToast('Erro ao baixar PDF', 'error'); }
@@ -127,11 +127,11 @@ export default function CadastrosMotorista() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Cadastro de Motoristas</div>
+          <div className="page-title">Cadastro de Colaboradores</div>
           <div className="page-desc">Formulários de cadastro, documentos e contratos</div>
         </div>
         <div style={{display:'flex',gap:8}}>
-          <ExportBtn rows={rows} filename="cadastros_motoristas" columns={cols.map(c=>({key:c.key,label:c.label}))} />
+          <ExportBtn rows={rows} filename="cadastros_colaboradores" columns={cols.map(c=>({key:c.key,label:c.label}))} />
           <button className="btn btn-primary" onClick={()=>setModalConvite(true)}>+ Gerar Convite</button>
         </div>
       </div>
@@ -277,11 +277,11 @@ export default function CadastrosMotorista() {
               <button className="modal-close" onClick={()=>setModalConvite(false)}>×</button>
             </div>
             <div className="modal-body">
-              <Field label="Nome do motorista (opcional)">
+              <Field label="Nome do colaborador (opcional)">
                 <Input value={nomeConvite} onChange={e=>setNomeConvite(e.target.value)} placeholder="Ex: João Silva" />
               </Field>
               <p style={{fontSize:12, color:'var(--text3)', marginTop:8}}>
-                Um link será gerado com validade de 7 dias. Envie para o motorista preencher.
+                Um link será gerado com validade de 7 dias. Envie para o colaborador preencher.
               </p>
             </div>
             <div className="modal-footer">

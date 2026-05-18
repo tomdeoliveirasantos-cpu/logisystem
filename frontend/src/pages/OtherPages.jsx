@@ -696,7 +696,6 @@ export function Veiculos() {
 
 export function Motoristas() {
   const { data, loading, refetch } = useFetch('/motoristas');
-  const { data: transportadoras } = useFetch('/transportadoras');
   const { data: veiculos } = useFetch('/veiculos');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -738,7 +737,7 @@ export function Motoristas() {
     setForm(row ? {
       nome:row.nome, cnh:row.cnh, telefone:row.telefone,
       tipo_colaborador:row.tipo_colaborador || 'pendente',
-      transportadora_id:row.transportadora_id, veiculo_padrao_id:row.veiculo_padrao_id,
+      veiculo_padrao_id:row.veiculo_padrao_id,
       cnh_validade:row.cnh_validade?.substring(0,10) || '',
       cnh_categoria:row.cnh_categoria || '',
       endereco_cep:row.endereco_cep, endereco_logradouro:row.endereco_logradouro,
@@ -798,7 +797,7 @@ export function Motoristas() {
         try { const data = await res.json(); if (data.error) msg = data.error; } catch {}
         throw new Error(msg);
       }
-      showToast(editing ? 'Motorista atualizado!' : 'Motorista cadastrado!');
+      showToast(editing ? 'Colaborador atualizado!' : 'Colaborador cadastrado!');
       refetch(); close();
     } catch(e) { showToast(e.message,'error'); }
   };
@@ -807,10 +806,10 @@ export function Motoristas() {
   return (
     <div>
       <div className="page-header"><div><div className="page-title">Colaboradores</div><div className="page-desc">Motoristas, ajudantes e administrativos</div></div><div style={{display:'flex',gap:8,alignItems:'center'}}><ExportBtn rows={rows} filename="colaboradores" columns={[
-            {key:'nome',label:'Nome'},{key:'tipo_colaborador',label:'Tipo'},{key:'cnh',label:'CNH'},{key:'cnh_categoria',label:'Cat.'},
+            {key:'nome',label:'Nome'},{key:'cpf',label:'CPF'},{key:'rg',label:'RG'},{key:'tipo_colaborador',label:'Tipo'},{key:'cnh',label:'CNH'},{key:'cnh_categoria',label:'Cat.'},
             {key:'cnh_validade',label:'Validade CNH'},{key:'telefone',label:'Telefone'},
-            {key:'veiculo_padrao_placa',label:'Veículo Padrão'},{key:'transportadora_nome',label:'Transportadora'},
-          ]} /><button className="btn btn-ghost" onClick={()=>window.location.assign('/cadastros-motorista')} title="Gerar convite p/ motorista preencher o cadastro online">📨 Gerar Convite</button><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Colaborador</button></div></div>
+            {key:'veiculo_padrao_placa',label:'Veículo Padrão'},
+          ]} /><button className="btn btn-ghost" onClick={()=>window.location.assign('/cadastros-motorista')} title="Gerar convite p/ colaborador preencher o cadastro online">📨 Gerar Convite</button><button className="btn btn-primary" onClick={()=>open()}>+ Cadastrar Colaborador</button></div></div>
       <div className="page-body"><div className="card fade-up"><div className="table-wrap"><table>
         <thead><tr><th>Nome</th><th>Tipo</th><th>CNH</th><th>Cat.</th><th>Validade</th><th>Telefone</th><th>Veículo</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -875,6 +874,18 @@ export function Motoristas() {
                   <Input value={form.nome||''} onChange={e=>set('nome',e.target.value)}/>
                 </Field>
               </div>
+              <Field label="CPF *">
+                <Input value={form.cpf||''} onChange={e=>{
+                  const v = (e.target.value||'').replace(/\D/g,'').slice(0,11)
+                    .replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+                  set('cpf', v);
+                }} placeholder="000.000.000-00" maxLength={14}/>
+              </Field>
+              <Field label="RG *">
+                <Input value={form.rg||''} onChange={e=>set('rg', e.target.value)}
+                  placeholder="00.000.000-0" maxLength={20}/>
+              </Field>
+              <Field label="Telefone"><Input value={form.telefone||''} onChange={e=>set('telefone',e.target.value)}/></Field>
               <Field label="CNH"><Input value={form.cnh||''} onChange={e=>set('cnh',e.target.value)}/></Field>
               <Field label="Categoria CNH">
                 <Select value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}
@@ -883,7 +894,6 @@ export function Motoristas() {
               <Field label="Validade CNH">
                 <Input type="date" value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)}/>
               </Field>
-              <Field label="Telefone"><Input value={form.telefone||''} onChange={e=>set('telefone',e.target.value)}/></Field>
               <div style={{gridColumn:'span 2'}}>
                 <Field label="CNH (PDF/imagem)">
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png"
@@ -981,29 +991,12 @@ export function Motoristas() {
                     placeholder="Ex: Próprio, João da Silva, Empresa XYZ"/>
                 </Field>
               </div>
-              <Field label="CPF *">
-                <Input value={form.cpf||''} onChange={e=>{
-                  const v = (e.target.value||'').replace(/\D/g,'').slice(0,11)
-                    .replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
-                  set('cpf', v);
-                }} placeholder="000.000.000-00" maxLength={14}/>
-              </Field>
-              <Field label="RG *">
-                <Input value={form.rg||''} onChange={e=>set('rg', e.target.value)}
-                  placeholder="00.000.000-0" maxLength={20}/>
-              </Field>
               <Field label="Data de Admissão">
                 <Input type="date" value={form.data_admissao||''} onChange={e=>set('data_admissao',e.target.value)}/>
               </Field>
               <Field label="CNPJ (terceiros / PJ)">
                 <Input value={form.cnpj||''} onChange={e=>set('cnpj',e.target.value)} placeholder="00.000.000/0000-00"/>
               </Field>
-              <div style={{gridColumn:'span 2'}}>
-                <Field label="Transportadora">
-                  <Select value={form.transportadora_id||''} onChange={e=>set('transportadora_id',e.target.value)}
-                    options={[{value:'',label:'— Nenhuma —'},...(transportadoras||[]).map(t=>({value:t.id,label:t.nome}))]}/>
-                </Field>
-              </div>
               {editing?.status_cadastro === 'pendente_admin' && (
                 <div style={{gridColumn:'span 2'}}>
                   <Field label="Status do Cadastro">
@@ -1016,14 +1009,14 @@ export function Motoristas() {
               {editing && (
                 <div style={{gridColumn:'span 2', marginTop:8, padding:'12px 14px', background:'rgba(37,99,235,.06)', borderRadius:8, border:'1px solid rgba(37,99,235,.15)'}}>
                   <div style={{fontSize:11, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:8}}>
-                    🔑 Acesso ao app do motorista (/m)
+                    🔑 Acesso ao app do colaborador (/m)
                   </div>
                   {editing.cpf ? (
                     <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
                       <div style={{fontSize:13, flex:1, minWidth:200}}>
                         {editing.tem_senha
-                          ? <span>✓ Motorista tem senha cadastrada{editing.ultimo_login && <span style={{color:'var(--text3)'}}> (último login: {fmtDate(editing.ultimo_login)})</span>}</span>
-                          : <span style={{color:'var(--amber)'}}>⚠️ Motorista ainda não tem senha. Gere uma para liberar o acesso ao app.</span>
+                          ? <span>✓ Colaborador tem senha cadastrada{editing.ultimo_login && <span style={{color:'var(--text3)'}}> (último login: {fmtDate(editing.ultimo_login)})</span>}</span>
+                          : <span style={{color:'var(--amber)'}}>⚠️ Colaborador ainda não tem senha. Gere uma para liberar o acesso ao app.</span>
                         }
                       </div>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={gerarSenha} disabled={gerandoSenha} style={{color:'#2563eb', whiteSpace:'nowrap'}}>
@@ -1032,7 +1025,7 @@ export function Motoristas() {
                     </div>
                   ) : (
                     <div style={{fontSize:12, color:'var(--text3)'}}>
-                      ℹ️ Preencha e salve o CPF do motorista antes de gerar a senha de acesso.
+                      ℹ️ Preencha e salve o CPF do colaborador antes de gerar a senha de acesso.
                     </div>
                   )}
                 </div>

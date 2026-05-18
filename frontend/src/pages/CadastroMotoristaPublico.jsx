@@ -164,14 +164,62 @@ export default function CadastroMotoristaPublico() {
       const fd = new FormData();
       fd.append('dados', JSON.stringify(form));
       fd.append('assinatura', blob, 'assinatura.png');
+
+      // Calcula tamanho total dos arquivos para alertar conexão lenta
+      let totalMB = blob.size / 1024 / 1024;
       for (const [key, file] of Object.entries(files)) {
-        if (file) fd.append(key, file);
+        if (file) {
+          fd.append(key, file);
+          totalMB += file.size / 1024 / 1024;
+        }
       }
-      const res = await fetch(`${API}/cadastro-motorista/${token}`, { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data.success) setSent(true);
-      else alert(data.error || 'Erro ao enviar');
-    } catch (e) { alert('Erro ao enviar: ' + e.message); }
+
+      // Avisa caso seja envio grande (provável fonte de timeout em 3G/4G fraco)
+      if (totalMB > 5) {
+        const ok = confirm(`Você está enviando aproximadamente ${totalMB.toFixed(1)}MB de arquivos.\nEm conexões fracas o envio pode demorar ou falhar.\n\nDeseja continuar?`);
+        if (!ok) { setSending(false); return; }
+      }
+
+      // Timeout de 90s para evitar travar pra sempre
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 90000);
+
+      let res;
+      try {
+        res = await fetch(`${API}/cadastro-motorista/${token}`, {
+          method: 'POST',
+          body: fd,
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Trata resposta — pode não ser JSON em alguns casos de erro do servidor/proxy
+      let data;
+      try { data = await res.json(); }
+      catch { data = null; }
+
+      if (res.ok && data?.success) {
+        setSent(true);
+      } else if (data?.error) {
+        alert('Não foi possível enviar: ' + data.error);
+      } else if (res.status >= 500) {
+        alert(`Servidor não respondeu corretamente (HTTP ${res.status}).\nTente novamente em alguns instantes.`);
+      } else if (res.status === 413) {
+        alert('Arquivos muito grandes. Reduza o tamanho ou envie menos anexos.');
+      } else {
+        alert(`Erro ao enviar (HTTP ${res.status}). Tente novamente.`);
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        alert('O envio demorou muito (mais de 1min30s) e foi cancelado.\nVerifique sua conexão de internet e tente novamente. Se possível, conecte-se ao Wi-Fi.');
+      } else if (e.message === 'Failed to fetch' || /network/i.test(e.message)) {
+        alert('Falha de conexão com o servidor.\nPossíveis causas:\n• Internet instável (tente Wi-Fi)\n• Arquivos muito grandes\n\nTente novamente.');
+      } else {
+        alert('Erro ao enviar: ' + e.message);
+      }
+    }
     setSending(false);
   };
 
@@ -231,13 +279,29 @@ export default function CadastroMotoristaPublico() {
 
   const FileInput = ({ field, label }) => {
     const hasFile = !!files[field];
+    const handleFile = (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      // Limite generoso de 8MB (servidor aceita até 10MB)
+      const MAX_MB = 8;
+      if (f.size > MAX_MB * 1024 * 1024) {
+        alert(`Arquivo muito grande: ${(f.size/1024/1024).toFixed(1)}MB.\nO limite é ${MAX_MB}MB. Tire uma nova foto com qualidade menor ou comprima o PDF.`);
+        e.target.value = '';
+        return;
+      }
+      setFiles(prev => ({...prev, [field]: f}));
+    };
     return (
       <div>
         <label style={s.label}>{label}</label>
         <label style={{...s.fileBtn, ...(hasFile ? s.fileOk : {})}}>
-          <span>{hasFile ? `✓ ${files[field].name}` : '📎 Selecionar arquivo (PDF, JPG, PNG)'}</span>
+          <span>
+            {hasFile
+              ? `✓ ${files[field].name} (${(files[field].size/1024/1024).toFixed(1)}MB)`
+              : '📎 Selecionar arquivo (PDF, JPG, PNG — máx 8MB)'}
+          </span>
           <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{display:'none'}}
-            onChange={e => setFiles(f => ({...f, [field]: e.target.files[0]}))} />
+            onChange={handleFile} />
         </label>
       </div>
     );

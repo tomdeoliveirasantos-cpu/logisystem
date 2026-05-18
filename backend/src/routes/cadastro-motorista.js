@@ -64,6 +64,31 @@ const docFields = upload.fields([
   { name: 'assinatura', maxCount: 1 },
 ]);
 
+// Wrapper de docFields: traduz erros do multer em JSON limpo
+function docFieldsSafe(req, res, next) {
+  docFields(req, res, (err) => {
+    if (!err) return next();
+    // Multer error: arquivo grande, campo inesperado, etc.
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        error: 'Arquivo muito grande (máximo 10MB por arquivo). Reduza o tamanho e tente novamente.',
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'Tipo de anexo inesperado no envio.' });
+    }
+    // Filtro de extensão
+    if (err.message && err.message.includes('Tipo de arquivo')) {
+      return res.status(400).json({ error: err.message });
+    }
+    // Erro genérico de upload — provavelmente conexão cortada
+    console.error('[cadastro-motorista] erro upload:', err.message);
+    return res.status(500).json({
+      error: 'Falha ao receber os arquivos. Pode ser conexão instável ou arquivo muito grande. Tente novamente.',
+    });
+  });
+}
+
 // GET /api/cadastro-motorista/:token — Verificar convite
 publicRouter.get('/:token', async (req, res, next) => {
   try {
@@ -95,7 +120,7 @@ publicRouter.get('/:token', async (req, res, next) => {
 });
 
 // POST /api/cadastro-motorista/:token — Enviar formulário completo
-publicRouter.post('/:token', docFields, async (req, res, next) => {
+publicRouter.post('/:token', docFieldsSafe, async (req, res, next) => {
   try {
     const { rows: convites } = await db.query(
       `SELECT id, status, expires_at, organizacao_id FROM logi_cadastro_convites WHERE token = $1`,

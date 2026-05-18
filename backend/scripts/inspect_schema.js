@@ -1,68 +1,53 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { Pool } = require('pg');
 const fs = require('fs');
+const path = require('path');
 
-const log = (msg) => fs.appendFileSync('C:\\Desenvolvimento\\logisystem\\backend\\schema_inspect.txt', msg + '\n');
+const LOG = path.join(__dirname, '..', 'schema_inspect.txt');
+fs.writeFileSync(LOG, '');
+const log = (msg) => fs.appendFileSync(LOG, msg + '\n');
 
-fs.writeFileSync('C:\\Desenvolvimento\\logisystem\\backend\\schema_inspect.txt', '');
+log('DATABASE_URL set=' + (!!process.env.DATABASE_URL));
 
-log('DB_HOST=' + process.env.DB_HOST);
-log('DB_PORT=' + process.env.DB_PORT);
-log('DB_NAME=' + process.env.DB_NAME);
-log('DB_USER=' + process.env.DB_USER);
-log('HAS_PWD=' + (!!process.env.DB_PASSWORD));
-
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 (async () => {
   try {
-    log('Conectando...');
     const tables = await pool.query(`
-      SELECT table_name
-      FROM information_schema.tables
+      SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_name LIKE 'logi_%'
       ORDER BY table_name
     `);
-
     log(`\n=== TABELAS LOGI_* (${tables.rows.length}) ===`);
     tables.rows.forEach(r => log(`- ${r.table_name}`));
 
     const orgCols = await pool.query(`
       SELECT table_name, column_name, data_type
       FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name LIKE 'logi_%'
-        AND (column_name ILIKE '%empresa%' OR column_name ILIKE '%organiz%' OR column_name ILIKE '%tenant%')
+      WHERE table_schema = 'public' AND table_name LIKE 'logi_%'
+        AND (column_name ILIKE '%empresa%' OR column_name ILIKE '%organiz%' OR column_name ILIKE '%tenant%' OR column_name ILIKE '%cliente_sistema%')
       ORDER BY table_name, column_name
     `);
-
-    log(`\n=== COLUNAS RELACIONADAS A EMPRESA/ORG (${orgCols.rows.length}) ===`);
+    log(`\n=== COLUNAS EMPRESA/ORG (${orgCols.rows.length}) ===`);
     orgCols.rows.forEach(r => log(`- ${r.table_name}.${r.column_name} (${r.data_type})`));
 
     const userCols = await pool.query(`
-      SELECT column_name, data_type, is_nullable, column_default
+      SELECT column_name, data_type, is_nullable
       FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'logi_usuarios'
       ORDER BY ordinal_position
     `);
-
     log(`\n=== logi_usuarios SCHEMA ===`);
-    userCols.rows.forEach(r => log(`- ${r.column_name} ${r.data_type}${r.is_nullable === 'NO' ? ' NOT NULL' : ''}${r.column_default ? ' DEFAULT '+r.column_default : ''}`));
+    userCols.rows.forEach(r => log(`- ${r.column_name} ${r.data_type}${r.is_nullable === 'NO' ? ' NOT NULL' : ''}`));
 
-    const mainTables = ['logi_usuarios', 'logi_clientes', 'logi_motoristas', 'logi_veiculos', 'logi_ordens_transporte', 'logi_romaneios', 'logi_fornecedores', 'logi_manutencoes', 'logi_contas_pagar', 'logi_contas_receber', 'logi_multas', 'logi_tabela_frete'];
+    // Conta registros nas principais tabelas
     log(`\n=== CONTAGEM DE REGISTROS ===`);
-    for (const t of mainTables) {
+    for (const t of tables.rows) {
       try {
-        const r = await pool.query(`SELECT COUNT(*) as c FROM ${t}`);
-        log(`- ${t}: ${r.rows[0].c}`);
+        const r = await pool.query(`SELECT COUNT(*) as c FROM ${t.table_name}`);
+        log(`- ${t.table_name}: ${r.rows[0].c}`);
       } catch (e) {
-        log(`- ${t}: (${e.message.substring(0, 60)})`);
+        log(`- ${t.table_name}: ERRO ${e.message.substring(0, 40)}`);
       }
     }
 

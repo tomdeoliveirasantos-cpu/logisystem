@@ -9,7 +9,6 @@ const maskTel = v => { const d=v.replace(/\D/g,''); if(d.length<=10) return d.re
 const maskCEP = v => v.replace(/\D/g,'').replace(/(\d{5})(\d)/,'$1-$2').slice(0,9);
 const maskPlaca = v => v.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,7);
 
-/* ── Busca CEP via ViaCEP ── */
 async function buscaCEP(cep) {
   const clean = cep.replace(/\D/g, '');
   if (clean.length !== 8) return null;
@@ -30,6 +29,8 @@ export default function CadastroMotoristaPublico() {
   const token = window.location.pathname.split('/cadastro-motorista/')[1];
   const [status, setStatus] = useState('loading');
   const [nomeConvite, setNomeConvite] = useState('');
+  const [parametros, setParametros] = useState({});
+  const [catalogo, setCatalogo] = useState({ campos: [], passos: [] });
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({});
   const [files, setFiles] = useState({});
@@ -42,11 +43,13 @@ export default function CadastroMotoristaPublico() {
 
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
-  // Busca CEP com preenchimento automático
+  const isReq    = (chave) => parametros[chave] === 'obrigatorio';
+  const isHidden = (chave) => parametros[chave] === 'oculto';
+  const mark     = (label, chave) => isReq(chave) ? `${label} *` : label;
+
   const handleCEP = async (cepValue, prefix) => {
     const cepField = prefix ? `cep_${prefix}` : 'cep';
     set(cepField, maskCEP(cepValue));
-
     const clean = cepValue.replace(/\D/g, '');
     if (clean.length === 8) {
       setBuscandoCep(cepField);
@@ -68,13 +71,17 @@ export default function CadastroMotoristaPublico() {
     }
   };
 
-  // Verificar convite
   useEffect(() => {
     if (!token) { setStatus('error'); return; }
     fetch(`${API}/cadastro-motorista/${token}`)
       .then(r => r.json())
       .then(d => {
-        if (d.valid) { setStatus('valid'); setNomeConvite(d.nome_motorista || ''); }
+        if (d.valid) {
+          setStatus('valid');
+          setNomeConvite(d.nome_motorista || '');
+          setParametros(d.parametros || {});
+          setCatalogo(d.catalogo || { campos: [], passos: [] });
+        }
         else if (d.error?.includes('preenchido')) setStatus('filled');
         else if (d.error?.includes('expirou')) setStatus('expired');
         else setStatus('error');
@@ -82,41 +89,74 @@ export default function CadastroMotoristaPublico() {
       .catch(() => setStatus('error'));
   }, [token]);
 
-  // ── Canvas de assinatura ──
   useEffect(() => {
     if (step !== 4) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
-    ctx.scale(2, 2);
-    ctx.strokeStyle = '#1a2740';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#1a2740'; ctx.lineWidth = 2; ctx.lineCap = 'round';
   }, [step]);
 
   const getPos = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const t = e.touches ? e.touches[0] : e;
-    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    const t = e.touches?.[0];
+    const x = (t ? t.clientX : e.clientX) - rect.left;
+    const y = (t ? t.clientY : e.clientY) - rect.top;
+    return { x: x * sx, y: y * sy };
   };
-
-  const startDraw = (e) => { e.preventDefault(); setDrawing(true); const ctx = canvasRef.current.getContext('2d'); const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); };
-  const draw = (e) => { if (!drawing) return; e.preventDefault(); const ctx = canvasRef.current.getContext('2d'); const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); setHasSig(true); };
+  const startDraw = (e) => { e.preventDefault(); const { x, y } = getPos(e); const ctx = canvasRef.current.getContext('2d'); ctx.beginPath(); ctx.moveTo(x, y); setDrawing(true); };
+  const draw = (e) => { if (!drawing) return; e.preventDefault(); const { x, y } = getPos(e); const ctx = canvasRef.current.getContext('2d'); ctx.lineTo(x, y); ctx.stroke(); setHasSig(true); };
   const endDraw = () => setDrawing(false);
   const clearSig = () => { const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); setHasSig(false); };
 
-  // ── Submeter ──
+  const camposVisiveis = (passoId) =>
+    (catalogo.campos || []).filter(c => c.passo === passoId && !isHidden(c.chave));
+
+  const passosVisiveis = () => {
+    const arr = [];
+    for (const p of (catalogo.passos || [])) {
+      if (p.id === 4) { arr.push(p); continue; }
+      if (camposVisiveis(p.id).length > 0) arr.push(p);
+    }
+    return arr;
+  };
+
+  const proxStep = () => {
+    const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
+    if (ehSimples && step === 0) return 4;
+    let n = step + 1;
+    while (n < 4 && camposVisiveis(n).length === 0) n++;
+    return n;
+  };
+  const antStep = () => {
+    const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
+    if (ehSimples && step === 4) return 0;
+    let n = step - 1;
+    while (n > 0 && camposVisiveis(n).length === 0) n--;
+    return Math.max(0, n);
+  };
+
   const submit = async () => {
-    // Validações obrigatórias
-    if (!form.nome || !form.nome.trim()) return alert('Nome é obrigatório.');
-    if (!form.cpf || !form.cpf.trim())   return alert('CPF é obrigatório.');
-    if (!form.rg || !form.rg.trim())     return alert('RG é obrigatório.');
+    const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
+    for (const c of (catalogo.campos || [])) {
+      if (!isReq(c.chave) || isHidden(c.chave)) continue;
+      if (ehSimples && c.passo > 0 && c.passo < 4) continue;
+      let preenchido;
+      if (c.tipo === 'arquivo') {
+        const fieldName = c.chave.replace(/^doc_/, '');
+        preenchido = !!files[fieldName];
+      } else {
+        const v = form[c.chave];
+        preenchido = v != null && String(v).trim() !== '';
+      }
+      if (!preenchido) return alert(`${c.label} é obrigatório.`);
+    }
+
     if (!hasSig) return alert('Por favor, assine o contrato antes de enviar.');
+
     setSending(true);
     try {
       const canvas = canvasRef.current;
@@ -135,7 +175,6 @@ export default function CadastroMotoristaPublico() {
     setSending(false);
   };
 
-  // ── Estilos ──
   const s = {
     container: { minHeight:'100vh', background:'#f0f2f5', fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif' },
     card: { maxWidth:640, margin:'0 auto', padding:'0 16px' },
@@ -190,8 +229,6 @@ export default function CadastroMotoristaPublico() {
     </div>
   );
 
-  const stepTitles = ['Dados Pessoais', 'Dados da Empresa', 'Veículo', 'Dados Bancários', 'Contrato e Assinatura'];
-
   const FileInput = ({ field, label }) => {
     const hasFile = !!files[field];
     return (
@@ -208,6 +245,10 @@ export default function CadastroMotoristaPublico() {
 
   const CepHint = ({ field }) => buscandoCep === field ? <span style={s.cepLoading}>Buscando CEP...</span> : null;
 
+  const passosVis = passosVisiveis();
+  const stepIndexNoArray = passosVis.findIndex(p => p.id === step);
+  const stepTitle = passosVis.find(p => p.id === step)?.titulo || '';
+
   return (
     <div style={s.container}>
       <div style={s.header}>
@@ -217,226 +258,225 @@ export default function CadastroMotoristaPublico() {
 
       <div style={s.card}>
         <div style={s.stepDots}>
-          {stepTitles.map((_, i) => <div key={i} style={s.dot(i <= step)} />)}
+          {passosVis.map((p, i) => <div key={p.id} style={s.dot(i <= stepIndexNoArray)} />)}
         </div>
         <div style={{fontSize:15, fontWeight:600, color:'#1a2740', marginBottom:16, textAlign:'center'}}>
-          {step + 1}. {stepTitles[step]}
+          {stepIndexNoArray + 1}. {stepTitle}
         </div>
 
-        {/* STEP 0: Dados PF */}
         {step === 0 && (
           <div style={s.stepCard}>
             <div style={s.grid2}>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Tipo de Colaborador *</label>
-                <select style={s.input} value={form.tipo_colaborador||''}
-                  onChange={e=>set('tipo_colaborador', e.target.value)}>
-                  <option value="">— Selecione —</option>
-                  <option value="motorista_proprio">🏠 Motorista Próprio</option>
-                  <option value="motorista_terceiro">🚚 Motorista Terceiro</option>
-                  <option value="ajudante">👷 Ajudante</option>
-                  <option value="administrativo">💼 Administrativo</option>
-                </select>
-                {(form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo') && (
-                  <div style={{fontSize:12, color:'#16a34a', marginTop:6, padding:8, background:'#f0fdf4', borderRadius:6}}>
-                    ℹ️ Para esse tipo, só precisamos de nome, CPF e telefone. As demais etapas serão puladas.
-                  </div>
-                )}
-              </div>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Nome Completo *</label>
-                <input style={s.input} value={form.nome||''} onChange={e=>set('nome',e.target.value)} placeholder="Nome completo" />
-              </div>
-              <div>
-                <label style={s.label}>CPF *</label>
-                <input style={s.input} value={form.cpf||''} onChange={e=>set('cpf',maskCPF(e.target.value))} placeholder="000.000.000-00" />
-              </div>
-              <div>
-                <label style={s.label}>RG *</label>
-                <input style={s.input} value={form.rg||''} onChange={e=>set('rg',e.target.value)} placeholder="RG" />
-              </div>
-              <div>
-                <label style={s.label}>Nº CNH</label>
-                <input style={s.input} value={form.cnh_numero||''} onChange={e=>set('cnh_numero',e.target.value)} placeholder="Número da CNH" />
-              </div>
-              <div>
-                <label style={s.label}>Categoria CNH</label>
-                <select style={s.input} value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}>
-                  <option value="">Selecione</option>
-                  {['A','B','C','D','E','AB','AC','AD','AE'].map(c=><option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={s.label}>Validade CNH</label>
-                <input type="date" style={s.input} value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Telefone *</label>
-                <input style={s.input} value={form.telefone||''} onChange={e=>set('telefone',maskTel(e.target.value))} placeholder="(11) 99999-0000" />
-              </div>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Email</label>
-                <input type="email" style={s.input} value={form.email||''} onChange={e=>set('email',e.target.value)} placeholder="email@exemplo.com" />
-              </div>
-              <div>
-                <label style={s.label}>CEP</label>
-                <input style={s.input} value={form.cep||''} onChange={e=>handleCEP(e.target.value, '')} placeholder="00000-000" />
-                <CepHint field="cep" />
-              </div>
-              <div>
-                <label style={s.label}>Estado *</label>
-                <select style={s.input} value={form.estado||''} onChange={e=>set('estado',e.target.value)}>
-                  <option value="">UF</option>
-                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Endereço *</label>
-                <input style={s.input} value={form.endereco||''} onChange={e=>set('endereco',e.target.value)} placeholder="Rua, número" />
-              </div>
-              <div>
-                <label style={s.label}>Bairro</label>
-                <input style={s.input} value={form.bairro||''} onChange={e=>set('bairro',e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Cidade *</label>
-                <input style={s.input} value={form.cidade||''} onChange={e=>set('cidade',e.target.value)} />
-              </div>
+              {!isHidden('tipo_colaborador') && (
+                <div style={{gridColumn:'span 2'}}>
+                  <label style={s.label}>{mark('Tipo de Colaborador','tipo_colaborador')}</label>
+                  <select style={s.input} value={form.tipo_colaborador||''} onChange={e=>set('tipo_colaborador', e.target.value)}>
+                    <option value="">— Selecione —</option>
+                    <option value="motorista_proprio">🏠 Motorista Próprio</option>
+                    <option value="motorista_terceiro">🚚 Motorista Terceiro</option>
+                    <option value="ajudante">👷 Ajudante</option>
+                    <option value="administrativo">💼 Administrativo</option>
+                  </select>
+                  {(form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo') && (
+                    <div style={{fontSize:12, color:'#16a34a', marginTop:6, padding:8, background:'#f0fdf4', borderRadius:6}}>
+                      ℹ️ Para esse tipo, só precisamos dos dados pessoais. As demais etapas serão puladas.
+                    </div>
+                  )}
+                </div>
+              )}
+              {!isHidden('nome') && (
+                <div style={{gridColumn:'span 2'}}>
+                  <label style={s.label}>{mark('Nome Completo','nome')}</label>
+                  <input style={s.input} value={form.nome||''} onChange={e=>set('nome',e.target.value)} placeholder="Nome completo" />
+                </div>
+              )}
+              {!isHidden('cpf') && (
+                <div><label style={s.label}>{mark('CPF','cpf')}</label>
+                  <input style={s.input} value={form.cpf||''} onChange={e=>set('cpf',maskCPF(e.target.value))} placeholder="000.000.000-00" /></div>
+              )}
+              {!isHidden('rg') && (
+                <div><label style={s.label}>{mark('RG','rg')}</label>
+                  <input style={s.input} value={form.rg||''} onChange={e=>set('rg',e.target.value)} placeholder="RG" /></div>
+              )}
+              {!isHidden('cnh_numero') && (
+                <div><label style={s.label}>{mark('Nº CNH','cnh_numero')}</label>
+                  <input style={s.input} value={form.cnh_numero||''} onChange={e=>set('cnh_numero',e.target.value)} placeholder="Número da CNH" /></div>
+              )}
+              {!isHidden('cnh_categoria') && (
+                <div><label style={s.label}>{mark('Categoria CNH','cnh_categoria')}</label>
+                  <select style={s.input} value={form.cnh_categoria||''} onChange={e=>set('cnh_categoria',e.target.value)}>
+                    <option value="">Selecione</option>
+                    {['A','B','C','D','E','AB','AC','AD','AE'].map(c=><option key={c} value={c}>{c}</option>)}
+                  </select></div>
+              )}
+              {!isHidden('cnh_validade') && (
+                <div><label style={s.label}>{mark('Validade CNH','cnh_validade')}</label>
+                  <input type="date" style={s.input} value={form.cnh_validade||''} onChange={e=>set('cnh_validade',e.target.value)} /></div>
+              )}
+              {!isHidden('telefone') && (
+                <div><label style={s.label}>{mark('Telefone','telefone')}</label>
+                  <input style={s.input} value={form.telefone||''} onChange={e=>set('telefone',maskTel(e.target.value))} placeholder="(11) 99999-0000" /></div>
+              )}
+              {!isHidden('email') && (
+                <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Email','email')}</label>
+                  <input type="email" style={s.input} value={form.email||''} onChange={e=>set('email',e.target.value)} placeholder="email@exemplo.com" /></div>
+              )}
+              {!isHidden('cep') && (
+                <div><label style={s.label}>{mark('CEP','cep')}</label>
+                  <input style={s.input} value={form.cep||''} onChange={e=>handleCEP(e.target.value, '')} placeholder="00000-000" />
+                  <CepHint field="cep" /></div>
+              )}
+              {!isHidden('estado') && (
+                <div><label style={s.label}>{mark('Estado','estado')}</label>
+                  <select style={s.input} value={form.estado||''} onChange={e=>set('estado',e.target.value)}>
+                    <option value="">UF</option>
+                    {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u} value={u}>{u}</option>)}
+                  </select></div>
+              )}
+              {!isHidden('endereco') && (
+                <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Endereço','endereco')}</label>
+                  <input style={s.input} value={form.endereco||''} onChange={e=>set('endereco',e.target.value)} placeholder="Rua, número" /></div>
+              )}
+              {!isHidden('bairro') && (
+                <div><label style={s.label}>{mark('Bairro','bairro')}</label>
+                  <input style={s.input} value={form.bairro||''} onChange={e=>set('bairro',e.target.value)} /></div>
+              )}
+              {!isHidden('cidade') && (
+                <div><label style={s.label}>{mark('Cidade','cidade')}</label>
+                  <input style={s.input} value={form.cidade||''} onChange={e=>set('cidade',e.target.value)} /></div>
+              )}
             </div>
           </div>
         )}
 
-        {/* STEP 1: Dados PJ */}
         {step === 1 && (
           <div style={s.stepCard}>
             <div style={s.grid2}>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Razão Social *</label>
-                <input style={s.input} value={form.razao_social||''} onChange={e=>set('razao_social',e.target.value)} placeholder="Razão social da empresa" />
-              </div>
-              <div>
-                <label style={s.label}>CNPJ *</label>
-                <input style={s.input} value={form.cnpj||''} onChange={e=>set('cnpj',maskCNPJ(e.target.value))} placeholder="00.000.000/0000-00" />
-              </div>
-              <div>
-                <label style={s.label}>Data de Abertura *</label>
-                <input type="date" style={s.input} value={form.data_abertura||''} onChange={e=>set('data_abertura',e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>CEP PJ</label>
-                <input style={s.input} value={form.cep_pj||''} onChange={e=>handleCEP(e.target.value, 'pj')} placeholder="00000-000" />
-                <CepHint field="cep_pj" />
-              </div>
-              <div>
-                <label style={s.label}>Estado PJ *</label>
-                <select style={s.input} value={form.estado_pj||''} onChange={e=>set('estado_pj',e.target.value)}>
-                  <option value="">UF</option>
-                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Endereço PJ *</label>
-                <input style={s.input} value={form.endereco_pj||''} onChange={e=>set('endereco_pj',e.target.value)} placeholder="Endereço da empresa" />
-              </div>
-              <div>
-                <label style={s.label}>Bairro PJ</label>
-                <input style={s.input} value={form.bairro_pj||''} onChange={e=>set('bairro_pj',e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Cidade PJ *</label>
-                <input style={s.input} value={form.cidade_pj||''} onChange={e=>set('cidade_pj',e.target.value)} />
-              </div>
+              {!isHidden('razao_social') && (
+                <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Razão Social','razao_social')}</label>
+                  <input style={s.input} value={form.razao_social||''} onChange={e=>set('razao_social',e.target.value)} placeholder="Razão social da empresa" /></div>
+              )}
+              {!isHidden('cnpj') && (
+                <div><label style={s.label}>{mark('CNPJ','cnpj')}</label>
+                  <input style={s.input} value={form.cnpj||''} onChange={e=>set('cnpj',maskCNPJ(e.target.value))} placeholder="00.000.000/0000-00" /></div>
+              )}
+              {!isHidden('data_abertura') && (
+                <div><label style={s.label}>{mark('Data de Abertura','data_abertura')}</label>
+                  <input type="date" style={s.input} value={form.data_abertura||''} onChange={e=>set('data_abertura',e.target.value)} /></div>
+              )}
+              {!isHidden('cep_pj') && (
+                <div><label style={s.label}>{mark('CEP PJ','cep_pj')}</label>
+                  <input style={s.input} value={form.cep_pj||''} onChange={e=>handleCEP(e.target.value, 'pj')} placeholder="00000-000" />
+                  <CepHint field="cep_pj" /></div>
+              )}
+              {!isHidden('estado_pj') && (
+                <div><label style={s.label}>{mark('Estado PJ','estado_pj')}</label>
+                  <select style={s.input} value={form.estado_pj||''} onChange={e=>set('estado_pj',e.target.value)}>
+                    <option value="">UF</option>
+                    {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u} value={u}>{u}</option>)}
+                  </select></div>
+              )}
+              {!isHidden('endereco_pj') && (
+                <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Endereço PJ','endereco_pj')}</label>
+                  <input style={s.input} value={form.endereco_pj||''} onChange={e=>set('endereco_pj',e.target.value)} placeholder="Endereço da empresa" /></div>
+              )}
+              {!isHidden('bairro_pj') && (
+                <div><label style={s.label}>{mark('Bairro PJ','bairro_pj')}</label>
+                  <input style={s.input} value={form.bairro_pj||''} onChange={e=>set('bairro_pj',e.target.value)} /></div>
+              )}
+              {!isHidden('cidade_pj') && (
+                <div><label style={s.label}>{mark('Cidade PJ','cidade_pj')}</label>
+                  <input style={s.input} value={form.cidade_pj||''} onChange={e=>set('cidade_pj',e.target.value)} /></div>
+              )}
             </div>
           </div>
         )}
 
-        {/* STEP 2: Veículo */}
         {step === 2 && (
           <div style={s.stepCard}>
             <div style={s.grid2}>
-              <div>
-                <label style={s.label}>Placa *</label>
-                <input style={s.input} value={form.veiculo_placa||''} onChange={e=>set('veiculo_placa',maskPlaca(e.target.value))} placeholder="ABC1D23" />
-              </div>
-              <div>
-                <label style={s.label}>Modelo *</label>
-                <input style={s.input} value={form.veiculo_modelo||''} onChange={e=>set('veiculo_modelo',e.target.value)} placeholder="Ex: VW Constellation" />
-              </div>
-              <div>
-                <label style={s.label}>Ano *</label>
-                <input style={s.input} value={form.veiculo_ano||''} onChange={e=>set('veiculo_ano',e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="2024" />
-              </div>
+              {!isHidden('veiculo_placa') && (
+                <div><label style={s.label}>{mark('Placa','veiculo_placa')}</label>
+                  <input style={s.input} value={form.veiculo_placa||''} onChange={e=>set('veiculo_placa',maskPlaca(e.target.value))} placeholder="ABC1D23" /></div>
+              )}
+              {!isHidden('veiculo_modelo') && (
+                <div><label style={s.label}>{mark('Modelo','veiculo_modelo')}</label>
+                  <input style={s.input} value={form.veiculo_modelo||''} onChange={e=>set('veiculo_modelo',e.target.value)} placeholder="Ex: VW Constellation" /></div>
+              )}
+              {!isHidden('veiculo_ano') && (
+                <div><label style={s.label}>{mark('Ano','veiculo_ano')}</label>
+                  <input style={s.input} value={form.veiculo_ano||''} onChange={e=>set('veiculo_ano',e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="2024" /></div>
+              )}
+              {!isHidden('veiculo_rntrc') && (
+                <div><label style={s.label}>{mark('RNTRC (ANTT)','veiculo_rntrc')}</label>
+                  <input style={s.input} value={form.veiculo_rntrc||''} onChange={e=>set('veiculo_rntrc',e.target.value)} placeholder="Nº RNTRC" /></div>
+              )}
             </div>
           </div>
         )}
 
-        {/* STEP 3: Dados Bancários */}
         {step === 3 && (
           <div style={s.stepCard}>
             <div style={s.grid2}>
-              <div style={{gridColumn:'span 2'}}>
-                <label style={s.label}>Banco *</label>
-                <input style={s.input} value={form.banco||''} onChange={e=>set('banco',e.target.value)} placeholder="Ex: Bradesco, Itaú, Nubank..." />
-              </div>
-              <div>
-                <label style={s.label}>Agência</label>
-                <input style={s.input} value={form.agencia||''} onChange={e=>set('agencia',e.target.value)} placeholder="0000" />
-              </div>
-              <div>
-                <label style={s.label}>Conta</label>
-                <input style={s.input} value={form.conta||''} onChange={e=>set('conta',e.target.value)} placeholder="00000-0" />
-              </div>
-              <div>
-                <label style={s.label}>Tipo de Conta</label>
-                <select style={s.input} value={form.tipo_conta||''} onChange={e=>set('tipo_conta',e.target.value)}>
-                  <option value="">Selecione</option>
-                  <option value="corrente">Corrente</option>
-                  <option value="poupanca">Poupança</option>
-                </select>
-              </div>
-              <div>
-                <label style={s.label}>Chave PIX *</label>
-                <input style={s.input} value={form.pix||''} onChange={e=>set('pix',e.target.value)} placeholder="CPF, CNPJ, email, telefone ou aleatória" />
-              </div>
+              {!isHidden('banco') && (
+                <div style={{gridColumn:'span 2'}}><label style={s.label}>{mark('Banco','banco')}</label>
+                  <input style={s.input} value={form.banco||''} onChange={e=>set('banco',e.target.value)} placeholder="Ex: Bradesco, Itaú, Nubank..." /></div>
+              )}
+              {!isHidden('agencia') && (
+                <div><label style={s.label}>{mark('Agência','agencia')}</label>
+                  <input style={s.input} value={form.agencia||''} onChange={e=>set('agencia',e.target.value)} placeholder="0000" /></div>
+              )}
+              {!isHidden('conta') && (
+                <div><label style={s.label}>{mark('Conta','conta')}</label>
+                  <input style={s.input} value={form.conta||''} onChange={e=>set('conta',e.target.value)} placeholder="00000-0" /></div>
+              )}
+              {!isHidden('tipo_conta') && (
+                <div><label style={s.label}>{mark('Tipo de Conta','tipo_conta')}</label>
+                  <select style={s.input} value={form.tipo_conta||''} onChange={e=>set('tipo_conta',e.target.value)}>
+                    <option value="">Selecione</option>
+                    <option value="corrente">Corrente</option>
+                    <option value="poupanca">Poupança</option>
+                  </select></div>
+              )}
+              {!isHidden('pix') && (
+                <div><label style={s.label}>{mark('Chave PIX','pix')}</label>
+                  <input style={s.input} value={form.pix||''} onChange={e=>set('pix',e.target.value)} placeholder="CPF, CNPJ, email, telefone ou aleatória" /></div>
+              )}
             </div>
           </div>
         )}
 
-        {/* STEP 4: Documentos + Contrato + Assinatura */}
         {step === 4 && (
           <div>
-            <div style={s.stepCard}>
-              <h3 style={{fontSize:14, fontWeight:600, marginBottom:16, color:'#1a2740'}}>Upload de Documentos</h3>
-              <div style={{display:'grid', gap:12}}>
-                <FileInput field="cnh" label="CNH (frente e verso)" />
-                <FileInput field="cnpj_contrato_social" label="Cartão CNPJ / Contrato Social" />
-                <FileInput field="comprovante_endereco" label="Comprovante de Endereço" />
+            {(!isHidden('doc_cnh') || !isHidden('doc_cnpj_contrato_social') || !isHidden('doc_rntrc') || !isHidden('doc_comprovante_endereco')) && (
+              <div style={s.stepCard}>
+                <h3 style={{fontSize:14, fontWeight:600, marginBottom:16, color:'#1a2740'}}>Upload de Documentos</h3>
+                <div style={{display:'grid', gap:12}}>
+                  {!isHidden('doc_cnh') && <FileInput field="cnh" label={mark('CNH (frente e verso)','doc_cnh')} />}
+                  {!isHidden('doc_cnpj_contrato_social') && <FileInput field="cnpj_contrato_social" label={mark('Cartão CNPJ / Contrato Social','doc_cnpj_contrato_social')} />}
+                  {!isHidden('doc_rntrc') && <FileInput field="rntrc" label={mark('RNTRC (ANTT)','doc_rntrc')} />}
+                  {!isHidden('doc_comprovante_endereco') && <FileInput field="comprovante_endereco" label={mark('Comprovante de Endereço','doc_comprovante_endereco')} />}
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={s.stepCard}>
               <h3 style={{fontSize:14, fontWeight:600, marginBottom:8, color:'#1a2740'}}>Contrato de Prestação de Serviços</h3>
               <div style={{background:'#f8f9fa', borderRadius:8, padding:16, maxHeight:300, overflow:'auto', fontSize:11, color:'#4a5568', lineHeight:1.6, marginBottom:16, border:'1px solid #e5e7eb'}}>
                 <p><strong>CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE TRANSPORTE</strong></p>
-                <p>Pelo presente instrumento particular, de um lado a <strong>CONTRATANTE</strong> e de outro o <strong>CONTRATADO</strong> ({form.razao_social || form.nome || '—'}), CNPJ: {form.cnpj || '—'}, têm entre si justo e contratado:</p>
-                <p><strong>CLÁUSULA 1 – DO OBJETO</strong><br/>Prestação de serviços de transporte rodoviário de cargas pelo CONTRATADO, com fornecimento de veículo próprio e mão de obra, conforme demanda da CONTRATANTE, sem exclusividade.</p>
+                <p style={{marginTop:8}}>Pelo presente instrumento particular, de um lado a <strong>CONTRATANTE</strong> e de outro o <strong>CONTRATADO</strong> ({form.razao_social || form.nome || '—'}), CNPJ: {form.cnpj || '—'}, têm entre si justo e contratado:</p>
+                <p style={{marginTop:8}}><strong>CLÁUSULA 1 – OBJETO</strong><br/>Prestação de serviços de transporte rodoviário de cargas, com veículo próprio.</p>
                 <p><strong>CLÁUSULA 2 – DAS OBRIGAÇÕES</strong><br/>Conferir a carga, zelar pela integridade, arcar com despesas do veículo, manter-se inscrito no RNTRC.</p>
-                <p><strong>CLÁUSULA 3 – HORÁRIOS</strong><br/>Segunda a sábado, nos locais e horários definidos pela CONTRATANTE.</p>
-                <p><strong>CLÁUSULA 4 – REMUNERAÇÃO</strong><br/>Calculada pela tabela de frete vigente. Pagamento quinzenal.</p>
-                <p><strong>CLÁUSULA 5 – VÍNCULO</strong><br/>Contrato de natureza civil e autônoma, sem vínculo empregatício.</p>
-                <p><strong>CLÁUSULAS 6 a 16</strong><br/>Exigências fiscais, responsabilidade, sigilo, caso fortuito, responsabilidade pela carga, não concorrência (12 meses), penalidades (100% dos últimos 3 meses), LGPD, ausência de subordinação, multiplicidade de tomadores, foro de Barueri/SP.</p>
-                <p style={{marginTop:12}}><em>Ao assinar abaixo, declaro que li e concordo com todos os termos deste contrato.</em></p>
+                <p><strong>CLÁUSULA 3 – REMUNERAÇÃO</strong><br/>Conforme tabela de frete vigente. Pagamentos quinzenais, por depósito bancário.</p>
+                <p><strong>CLÁUSULA 4 – VÍNCULO</strong><br/>Natureza civil e autônoma, sem vínculo empregatício.</p>
+                <p style={{marginTop:8, fontStyle:'italic'}}>Ao assinar abaixo, o CONTRATADO declara estar de acordo com todos os termos deste contrato.</p>
               </div>
 
-              <h3 style={{fontSize:14, fontWeight:600, marginBottom:8, color:'#1a2740'}}>Assinatura</h3>
-              <p style={{fontSize:12, color:'#6b7280', marginBottom:8}}>Desenhe sua assinatura no campo abaixo:</p>
-              <div style={{border:'2px solid #d1d5db', borderRadius:8, overflow:'hidden', position:'relative', background:'#fff', touchAction:'none'}}>
-                <canvas
-                  ref={canvasRef}
-                  style={{width:'100%', height:150, display:'block', cursor:'crosshair'}}
+              <label style={s.label}>Assinatura *</label>
+              <div style={{border:'2px solid #d1d5db', borderRadius:8, background:'#fff', position:'relative', touchAction:'none'}}>
+                <canvas ref={canvasRef} width={560} height={180} style={{width:'100%', height:'auto', display:'block', cursor:'crosshair'}}
                   onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
-                  onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
-                />
+                  onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw} />
                 {!hasSig && <div style={{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', color:'#d1d5db', fontSize:14, pointerEvents:'none'}}>Assine aqui</div>}
               </div>
               <button onClick={clearSig} style={{...s.btn, ...s.btnGhost, marginTop:8, padding:'6px 16px', fontSize:12}}>Limpar assinatura</button>
@@ -444,21 +484,12 @@ export default function CadastroMotoristaPublico() {
           </div>
         )}
 
-        {/* Navegação */}
         <div style={{display:'flex', justifyContent:'space-between', marginBottom:40, marginTop:8}}>
           {step > 0 ? (
-            <button style={{...s.btn, ...s.btnGhost}} onClick={()=>{
-              const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
-              // Se está em step 4 (contrato) e é simples, voltar direto pro step 0
-              setStep(st => (ehSimples && st === 4) ? 0 : st - 1);
-            }}>← Anterior</button>
+            <button style={{...s.btn, ...s.btnGhost}} onClick={()=>setStep(antStep())}>← Anterior</button>
           ) : <div/>}
           {step < 4 ? (
-            <button style={{...s.btn, ...s.btnPrimary}} onClick={()=>{
-              const ehSimples = form.tipo_colaborador === 'ajudante' || form.tipo_colaborador === 'administrativo';
-              // Se ajudante/admin, pular direto pra etapa 4 (Contrato)
-              setStep(st => (ehSimples && st === 0) ? 4 : st + 1);
-            }}>Próximo →</button>
+            <button style={{...s.btn, ...s.btnPrimary}} onClick={()=>setStep(proxStep())}>Próximo →</button>
           ) : (
             <button style={{...s.btn, ...s.btnPrimary, opacity: sending ? 0.6 : 1}} onClick={submit} disabled={sending}>
               {sending ? 'Enviando...' : '✓ Enviar Cadastro'}

@@ -4,6 +4,21 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const db = require('../db');
+const { CAMPOS, PASSOS, mergeComDefaults } = require('../lib/cadastro-publico-campos');
+
+// Busca os parâmetros efetivos (com defaults aplicados) para uma org.
+// Função interna, sem auth — usada pelo publicRouter que descobre org via token do convite.
+async function carregarParametros(organizacaoId) {
+  try {
+    const { rows } = await db.query(
+      `SELECT parametros FROM logi_parametros_cadastro_publico WHERE organizacao_id = $1`,
+      [organizacaoId]
+    );
+    return mergeComDefaults(rows[0]?.parametros || {});
+  } catch {
+    return mergeComDefaults({});
+  }
+}
 
 // ══════════════════════════════════════════════════════
 // ROUTER PÚBLICO — formulário do motorista (sem auth)
@@ -64,10 +79,17 @@ publicRouter.get('/:token', async (req, res, next) => {
     const convite = rows[0];
     if (convite.status === 'preenchido') return res.status(400).json({ error: 'Este formulário já foi preenchido' });
     if (convite.expires_at && new Date(convite.expires_at) < new Date()) return res.status(400).json({ error: 'Este convite expirou' });
+
+    // Junta os parâmetros (obrigatório/opcional/oculto por campo) — assim o form
+    // só pede o que esta org configurou
+    const parametros = await carregarParametros(convite.organizacao_id);
+
     res.json({
       valid: true,
       nome_motorista: convite.nome_motorista,
       organizacao_nome: convite.organizacao_nome,
+      parametros,
+      catalogo: { campos: CAMPOS, passos: PASSOS },
     });
   } catch (err) { next(err); }
 });
@@ -91,21 +113,43 @@ publicRouter.post('/:token', docFields, async (req, res, next) => {
 
     const data = JSON.parse(req.body.dados || '{}');
 
-    // Validações de obrigatoriedade
-    if (!data.nome || !String(data.nome).trim()) {
-      return res.status(400).json({ error: 'Nome é obrigatório' });
-    }
-    if (!data.cpf || !String(data.cpf).trim()) {
-      return res.status(400).json({ error: 'CPF é obrigatório' });
-    }
-    if (!data.rg || !String(data.rg).trim()) {
-      return res.status(400).json({ error: 'RG é obrigatório' });
-    }
+    // Carrega os parâmetros da org para validar dinâmicamente
+    const parametros = await carregarParametros(organizacaoId);
+
+    // Para tipos simples (ajudante/administrativo), só campos do passo 0 são validados.
+    // Para motoristas (próprio/terceiro), todos os passos com campos obrigatórios.
+    const ehSimples = data.tipo_colaborador === 'ajudante' || data.tipo_colaborador === 'administrativo';
 
     const arquivos = {};
     for (const campo of ['cnh', 'cnpj_contrato_social', 'rntrc', 'comprovante_endereco', 'assinatura']) {
       if (req.files && req.files[campo] && req.files[campo][0]) {
         arquivos[campo] = `/uploads/motoristas/${req.params.token}/${req.files[campo][0].filename}`;
+      }
+    }
+
+    // Mapa chave_doc → tem_arquivo (pra checar obrigatoriedade de uploads)
+    const docPresente = {
+      doc_cnh: !!arquivos.cnh,
+      doc_cnpj_contrato_social: !!arquivos.cnpj_contrato_social,
+      doc_rntrc: !!arquivos.rntrc,
+      doc_comprovante_endereco: !!arquivos.comprovante_endereco,
+    };
+
+    // Valida obrigatoriedade dinâmica
+    for (const campo of CAMPOS) {
+      if (parametros[campo.chave] !== 'obrigatorio') continue;
+      // Pula passos > 0 quando ajudante/administrativo
+      if (ehSimples && campo.passo > 0 && campo.passo < 4) continue;
+
+      let preenchido;
+      if (campo.tipo === 'arquivo') {
+        preenchido = docPresente[campo.chave];
+      } else {
+        const v = data[campo.chave];
+        preenchido = v != null && String(v).trim() !== '';
+      }
+      if (!preenchido) {
+        return res.status(400).json({ error: `${campo.label} é obrigatório` });
       }
     }
 

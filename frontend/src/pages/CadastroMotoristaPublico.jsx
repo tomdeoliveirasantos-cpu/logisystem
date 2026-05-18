@@ -196,7 +196,7 @@ export default function CadastroMotoristaPublico() {
     const hasFile = !!files[field];
     return (
       <div>
-        <label style={s.label}>{label} *</label>
+        <label style={s.label}>{label}</label>
         <label style={{...s.fileBtn, ...(hasFile ? s.fileOk : {})}}>
           <span>{hasFile ? `✓ ${files[field].name}` : '📎 Selecionar arquivo (PDF, JPG, PNG)'}</span>
           <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{display:'none'}}
@@ -366,10 +366,6 @@ export default function CadastroMotoristaPublico() {
                 <label style={s.label}>Ano *</label>
                 <input style={s.input} value={form.veiculo_ano||''} onChange={e=>set('veiculo_ano',e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="2024" />
               </div>
-              <div>
-                <label style={s.label}>RNTRC (ANTT) *</label>
-                <input style={s.input} value={form.veiculo_rntrc||''} onChange={e=>set('veiculo_rntrc',e.target.value)} placeholder="Nº RNTRC" />
-              </div>
             </div>
           </div>
         )}
@@ -414,7 +410,6 @@ export default function CadastroMotoristaPublico() {
               <div style={{display:'grid', gap:12}}>
                 <FileInput field="cnh" label="CNH (frente e verso)" />
                 <FileInput field="cnpj_contrato_social" label="Cartão CNPJ / Contrato Social" />
-                <FileInput field="rntrc" label="RNTRC (ANTT)" />
                 <FileInput field="comprovante_endereco" label="Comprovante de Endereço" />
               </div>
             </div>

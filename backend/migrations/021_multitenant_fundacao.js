@@ -1,5 +1,6 @@
 require('dotenv').config({ path: 'C:\\Desenvolvimento\\logisystem\\backend\\.env' });
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,17 +15,14 @@ const SLUG_MTRANS = 'mtrans';
 const SUPER_ADMIN_EMAIL = 'admin@logisystem.com';
 
 // Admin da Mtrans — usuário NOVO criado pela migration
-const MTRANS_ADMIN = {
-  email: 'admin@mtrans.com.br',
-  nome: 'Administrador Mtrans',
-  // Hash bcrypt rounds=10 da senha 'Mtrans@2026' (TROCA OBRIGATÓRIA no 1º login)
-  senha_hash: '$2b$10$9pkbG5ezCmo6oOPV9NBh4.oy6N10xQ/dOzm/1xXJfiZhg.gZg9yqK',
-  senha_clara_log: 'Mtrans@2026', // só pra aparecer no log da migration, NUNCA persistir
-};
+// senha_resetada=true força troca obrigatória no 1º login
+const MTRANS_ADMIN_EMAIL = 'admin@mtrans.com.br';
+const MTRANS_ADMIN_NOME = 'Administrador Mtrans';
+const MTRANS_SENHA_INICIAL = 'LogiSystem@2026';
 
 // Tabelas tenant-aware: ganham coluna organizacao_id
 const TABELAS_TENANT = [
-  // Operacionais
+  // Operacionais (16)
   'logi_clientes',
   'logi_motoristas',
   'logi_veiculos',
@@ -41,7 +39,7 @@ const TABELAS_TENANT = [
   'logi_contas_receber',
   'logi_adiantamentos',
   'logi_fornecedores',
-  // Cadastros auxiliares
+  // Cadastros auxiliares (5)
   'logi_tabela_fretes',
   'logi_tabela_frete_recebido',
   'logi_reajustes_frete',
@@ -110,13 +108,12 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 2. Inserir org WsDevSoft e Léo Madeiras
+    // 2. Inserir organizações: WsDevSoft, Léo Madeiras, Mtrans
     // ════════════════════════════════════════════════════════════════
     log('\n--- 2. Seed de organizações ---');
 
-    let wsdev = await client.query(
-      `SELECT id FROM logi_organizacoes WHERE slug = $1`, [SLUG_WSDEV]
-    );
+    // WsDevSoft (super-admin)
+    let wsdev = await client.query(`SELECT id FROM logi_organizacoes WHERE slug = $1`, [SLUG_WSDEV]);
     let wsdevId;
     if (wsdev.rows.length) {
       wsdevId = wsdev.rows[0].id;
@@ -131,9 +128,8 @@ async function tableExists(client, table) {
       log(`  ✓ WsDevSoft criada (${wsdevId})`);
     }
 
-    let leo = await client.query(
-      `SELECT id FROM logi_organizacoes WHERE slug = $1`, [SLUG_LEO]
-    );
+    // Léo Madeiras (cliente atual — dados existentes apontam para cá)
+    let leo = await client.query(`SELECT id FROM logi_organizacoes WHERE slug = $1`, [SLUG_LEO]);
     let leoId;
     if (leo.rows.length) {
       leoId = leo.rows[0].id;
@@ -148,9 +144,8 @@ async function tableExists(client, table) {
       log(`  ✓ Léo Madeiras criada (${leoId})`);
     }
 
-    let mtrans = await client.query(
-      `SELECT id FROM logi_organizacoes WHERE slug = $1`, [SLUG_MTRANS]
-    );
+    // Mtrans (cliente novo — abrirá vazio)
+    let mtrans = await client.query(`SELECT id FROM logi_organizacoes WHERE slug = $1`, [SLUG_MTRANS]);
     let mtransId;
     if (mtrans.rows.length) {
       mtransId = mtrans.rows[0].id;
@@ -191,10 +186,10 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 4. Backfill: todo usuário existente vira membro da Léo Madeiras
+    // 4. Backfill: usuários existentes → Léo Madeiras
     // ════════════════════════════════════════════════════════════════
     log('\n--- 4. Backfill logi_usuarios_orgs (Léo) ---');
-    const usuarios = await client.query(`SELECT id, email, perfil FROM logi_usuarios`);
+    const usuarios = await client.query(`SELECT id, email, perfil FROM logi_usuarios ORDER BY email`);
     log(`  Encontrados ${usuarios.rows.length} usuários`);
 
     for (const u of usuarios.rows) {
@@ -215,60 +210,7 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 4b. Adicionar coluna senha_resetada em logi_usuarios
-    //     (força troca de senha no 1º login do admin Mtrans)
-    // ════════════════════════════════════════════════════════════════
-    log('\n--- 4b. Coluna senha_resetada em logi_usuarios ---');
-    if (await columnExists(client, 'logi_usuarios', 'senha_resetada')) {
-      log('  ✓ coluna já existe');
-    } else {
-      await client.query(
-        `ALTER TABLE logi_usuarios ADD COLUMN senha_resetada BOOLEAN NOT NULL DEFAULT FALSE`
-      );
-      log('  ✓ senha_resetada adicionada (default FALSE)');
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // 4c. Criar usuário admin da Mtrans + vínculo
-    // ════════════════════════════════════════════════════════════════
-    log('\n--- 4c. Admin Mtrans ---');
-    const adminMtrans = await client.query(
-      `SELECT id, email FROM logi_usuarios WHERE LOWER(email) = LOWER($1)`,
-      [MTRANS_ADMIN.email]
-    );
-    let mtransUserId;
-    if (adminMtrans.rows.length) {
-      mtransUserId = adminMtrans.rows[0].id;
-      log(`  ✓ usuário ${MTRANS_ADMIN.email} já existe (${mtransUserId})`);
-    } else {
-      const r = await client.query(`
-        INSERT INTO logi_usuarios (nome, email, senha_hash, perfil, ativo, senha_resetada)
-        VALUES ($1, $2, $3, 'admin', TRUE, TRUE)
-        RETURNING id
-      `, [MTRANS_ADMIN.nome, MTRANS_ADMIN.email.toLowerCase(), MTRANS_ADMIN.senha_hash]);
-      mtransUserId = r.rows[0].id;
-      log(`  ✓ usuário ${MTRANS_ADMIN.email} criado (${mtransUserId})`);
-      log(`  ℹ senha inicial: ${MTRANS_ADMIN.senha_clara_log} (TROCA OBRIGATÓRIA no 1º login)`);
-    }
-
-    // Vincular admin Mtrans → Mtrans (perfil admin)
-    const vincMtrans = await client.query(
-      `SELECT 1 FROM logi_usuarios_orgs WHERE usuario_id=$1 AND organizacao_id=$2`,
-      [mtransUserId, mtransId]
-    );
-    if (vincMtrans.rows.length) {
-      log(`  ✓ vínculo Mtrans→admin já existe`);
-    } else {
-      await client.query(
-        `INSERT INTO logi_usuarios_orgs (usuario_id, organizacao_id, perfil_na_org)
-         VALUES ($1, $2, 'admin')`,
-        [mtransUserId, mtransId]
-      );
-      log(`  ✓ ${MTRANS_ADMIN.email} → Mtrans (admin)`);
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // 5. Vincular super-admin (Wellington) à WsDevSoft
+    // 5. Super-admin → WsDevSoft
     // ════════════════════════════════════════════════════════════════
     log('\n--- 5. Super-admin → WsDevSoft ---');
     const sa = await client.query(
@@ -276,7 +218,7 @@ async function tableExists(client, table) {
       [SUPER_ADMIN_EMAIL]
     );
     if (!sa.rows.length) {
-      log(`  ⚠ Usuário '${SUPER_ADMIN_EMAIL}' não encontrado — pule esta etapa e vincule manualmente depois`);
+      log(`  ⚠ Usuário '${SUPER_ADMIN_EMAIL}' não encontrado — vincule manualmente depois`);
     } else {
       const saId = sa.rows[0].id;
       const exists = await client.query(
@@ -296,9 +238,49 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 6. Adicionar organizacao_id (nullable) em todas as tabelas tenant
+    // 6. Criar admin da Mtrans (senha padrão + senha_resetada=true)
     // ════════════════════════════════════════════════════════════════
-    log('\n--- 6. Coluna organizacao_id (nullable) ---');
+    log('\n--- 6. Admin inicial da Mtrans ---');
+    const mtransUser = await client.query(
+      `SELECT id, email FROM logi_usuarios WHERE LOWER(email) = LOWER($1)`,
+      [MTRANS_ADMIN_EMAIL]
+    );
+    let mtransUserId;
+    if (mtransUser.rows.length) {
+      mtransUserId = mtransUser.rows[0].id;
+      log(`  ✓ ${MTRANS_ADMIN_EMAIL} já existe (${mtransUserId})`);
+    } else {
+      const hash = await bcrypt.hash(MTRANS_SENHA_INICIAL, 10);
+      const r = await client.query(`
+        INSERT INTO logi_usuarios (nome, email, senha_hash, perfil, ativo, senha_resetada)
+        VALUES ($1, $2, $3, 'admin', TRUE, TRUE)
+        RETURNING id
+      `, [MTRANS_ADMIN_NOME, MTRANS_ADMIN_EMAIL.toLowerCase(), hash]);
+      mtransUserId = r.rows[0].id;
+      log(`  ✓ Usuário criado: ${MTRANS_ADMIN_EMAIL} (id=${mtransUserId})`);
+      log(`    Senha inicial: ${MTRANS_SENHA_INICIAL} (TROCA OBRIGATÓRIA no 1º login)`);
+    }
+
+    // Vincular à Mtrans (admin)
+    const mtVinc = await client.query(
+      `SELECT 1 FROM logi_usuarios_orgs WHERE usuario_id=$1 AND organizacao_id=$2`,
+      [mtransUserId, mtransId]
+    );
+    if (mtVinc.rows.length) {
+      log(`  ✓ ${MTRANS_ADMIN_EMAIL} já vinculado à Mtrans`);
+    } else {
+      await client.query(
+        `INSERT INTO logi_usuarios_orgs (usuario_id, organizacao_id, perfil_na_org)
+         VALUES ($1, $2, 'admin')`,
+        [mtransUserId, mtransId]
+      );
+      log(`  ✓ ${MTRANS_ADMIN_EMAIL} → Mtrans (admin)`);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 7. Adicionar organizacao_id (nullable) em todas as tabelas tenant
+    // ════════════════════════════════════════════════════════════════
+    log('\n--- 7. Coluna organizacao_id (nullable) ---');
     for (const tabela of TABELAS_TENANT) {
       if (!(await tableExists(client, tabela))) {
         log(`  ⚠ ${tabela}: tabela não existe — pulando`);
@@ -315,9 +297,9 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 7. Backfill: todos os dados existentes pertencem à Léo
+    // 8. Backfill: dados existentes → Léo Madeiras
     // ════════════════════════════════════════════════════════════════
-    log('\n--- 7. Backfill organizacao_id = Léo Madeiras ---');
+    log('\n--- 8. Backfill organizacao_id = Léo Madeiras ---');
     for (const tabela of TABELAS_TENANT) {
       if (!(await tableExists(client, tabela))) continue;
       const r = await client.query(
@@ -328,9 +310,9 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 8. Índices em organizacao_id
+    // 9. Índices em organizacao_id
     // ════════════════════════════════════════════════════════════════
-    log('\n--- 8. Índices em organizacao_id ---');
+    log('\n--- 9. Índices em organizacao_id ---');
     for (const tabela of TABELAS_TENANT) {
       if (!(await tableExists(client, tabela))) continue;
       const idxName = `idx_${tabela}_org`;
@@ -347,9 +329,9 @@ async function tableExists(client, table) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 9. Validação final
+    // 10. Validação final
     // ════════════════════════════════════════════════════════════════
-    log('\n--- 9. Validação ---');
+    log('\n--- 10. Validação ---');
     const orgs = await client.query(`SELECT id, nome, slug, is_wsdevsoft FROM logi_organizacoes ORDER BY is_wsdevsoft DESC, nome`);
     log(`  Organizações cadastradas (${orgs.rows.length}):`);
     orgs.rows.forEach(o => log(`    - ${o.nome} (${o.slug}) ${o.is_wsdevsoft ? '[SUPER]' : ''}`));
@@ -365,8 +347,8 @@ async function tableExists(client, table) {
     log(`\n  Vínculos usuário↔org (${vinc.rows.length}):`);
     vinc.rows.forEach(v => log(`    - ${v.email} → ${v.org} (${v.perfil_na_org})`));
 
-    // Sanity check: nenhuma linha sem organizacao_id nas tabelas tenant
-    log('\n  Sanity check (linhas órfãs sem org):');
+    // Sanity check 1: nenhuma linha órfã (Léo)
+    log('\n  Sanity check — linhas órfãs sem org:');
     let totalOrfas = 0;
     for (const tabela of TABELAS_TENANT) {
       if (!(await tableExists(client, tabela))) continue;
@@ -377,28 +359,37 @@ async function tableExists(client, table) {
         totalOrfas += c;
       }
     }
-
-    // Validação Mtrans: deve estar com 0 registros em tudo
-    log('\n  Mtrans (deve estar com 0 em tudo — tela vazia):');
-    let mtransTotal = 0;
-    for (const tabela of TABELAS_TENANT) {
-      if (!(await tableExists(client, tabela))) continue;
-      const r = await client.query(`SELECT COUNT(*) AS c FROM ${tabela} WHERE organizacao_id = $1`, [mtransId]);
-      const c = parseInt(r.rows[0].c, 10);
-      mtransTotal += c;
-      if (c > 0) log(`    ⚠ ${tabela}: ${c} (não deveria!)`);
-    }
-    log(mtransTotal === 0
-      ? `    ✓ Mtrans com 0 registros em todas as ${TABELAS_TENANT.length} tabelas — pronto para 1º cadastro`
-      : `    ⚠ Mtrans tem ${mtransTotal} registros inesperados`);
     if (totalOrfas === 0) {
       log('    ✓ Nenhuma linha órfã. Pronto para Fase 5 (NOT NULL + RLS).');
     } else {
       log(`    ⚠ TOTAL: ${totalOrfas} linhas órfãs — investigar antes da Fase 5`);
     }
 
+    // Sanity check 2: Mtrans deve ter 0 registros em todas as tabelas
+    log('\n  Sanity check — Mtrans começa vazia:');
+    let totalMtrans = 0;
+    for (const tabela of TABELAS_TENANT) {
+      if (!(await tableExists(client, tabela))) continue;
+      const r = await client.query(`SELECT COUNT(*) AS c FROM ${tabela} WHERE organizacao_id = $1`, [mtransId]);
+      const c = parseInt(r.rows[0].c, 10);
+      if (c > 0) {
+        log(`    ⚠ ${tabela}: ${c} linhas na Mtrans (esperado 0)`);
+        totalMtrans += c;
+      }
+    }
+    if (totalMtrans === 0) {
+      log('    ✓ Mtrans 100% vazia — pronta para receber cadastros');
+    } else {
+      log(`    ⚠ TOTAL: ${totalMtrans} linhas indevidas na Mtrans`);
+    }
+
     await client.query('COMMIT');
     log(`\n=== ✓ MIGRATION 021 CONCLUÍDA EM ${new Date().toISOString()} ===`);
+    log('\nPróximos passos:');
+    log('  • Comunicar credenciais ao cliente Mtrans:');
+    log(`    Email: ${MTRANS_ADMIN_EMAIL}`);
+    log(`    Senha inicial: ${MTRANS_SENHA_INICIAL}`);
+    log('  • Avançar para Fase 2 (backend tenant-aware: JWT + middleware)');
     process.exit(0);
   } catch (e) {
     await client.query('ROLLBACK');

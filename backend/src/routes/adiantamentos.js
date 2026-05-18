@@ -27,7 +27,8 @@ const adtoUpload = multer({
   },
 });
 
-// SELECT base com todos os JOINs úteis
+// SELECT base com todos os JOINs úteis e isolamento por org via JOIN
+// Note: cláusula WHERE com a.organizacao_id = $X é responsabilidade do caller
 const SELECT_BASE = `
   SELECT
     a.*,
@@ -42,12 +43,12 @@ const SELECT_BASE = `
     cp_orig.tipo_lancamento AS cp_origem_tipo,
     cp_orig.status          AS cp_origem_status
   FROM logi_adiantamentos a
-  LEFT JOIN logi_motoristas mo       ON mo.id = a.motorista_id
-  LEFT JOIN logi_ajudantes  aj       ON aj.id = a.ajudante_id
-  LEFT JOIN logi_veiculos   v        ON v.id  = a.veiculo_id
-  LEFT JOIN logi_ordens_transporte o ON o.id  = a.ordem_id
+  LEFT JOIN logi_motoristas mo       ON mo.id = a.motorista_id  AND mo.organizacao_id = a.organizacao_id
+  LEFT JOIN logi_ajudantes  aj       ON aj.id = a.ajudante_id   AND aj.organizacao_id = a.organizacao_id
+  LEFT JOIN logi_veiculos   v        ON v.id  = a.veiculo_id    AND v.organizacao_id  = a.organizacao_id
+  LEFT JOIN logi_ordens_transporte o ON o.id  = a.ordem_id      AND o.organizacao_id  = a.organizacao_id
   LEFT JOIN logi_usuarios   u        ON u.id  = a.criado_por
-  LEFT JOIN logi_contas_pagar cp_orig ON cp_orig.id = a.conta_pagar_id
+  LEFT JOIN logi_contas_pagar cp_orig ON cp_orig.id = a.conta_pagar_id AND cp_orig.organizacao_id = a.organizacao_id
 `;
 
 // ════ LISTAR ═══════════════════════════════════════════════════════════════════
@@ -56,8 +57,8 @@ router.get('/', async (req, res, next) => {
   try {
     const { status, tipo_beneficiario, motorista_id, veiculo_id, ajudante_id,
             data_de, data_ate } = req.query;
-    const where = [];
-    const params = [];
+    const where = ['a.organizacao_id = $1'];
+    const params = [req.organizacao_id];
     if (status)            { params.push(status);            where.push(`a.status = $${params.length}`); }
     if (tipo_beneficiario) { params.push(tipo_beneficiario); where.push(`a.tipo_beneficiario = $${params.length}`); }
     if (motorista_id)      { params.push(motorista_id);      where.push(`a.motorista_id = $${params.length}`); }
@@ -65,7 +66,7 @@ router.get('/', async (req, res, next) => {
     if (ajudante_id)       { params.push(ajudante_id);       where.push(`a.ajudante_id = $${params.length}`); }
     if (data_de)           { params.push(data_de);           where.push(`a.data_adiantamento >= $${params.length}`); }
     if (data_ate)          { params.push(data_ate);          where.push(`a.data_adiantamento <= $${params.length}`); }
-    const wc = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const wc = `WHERE ${where.join(' AND ')}`;
     const { rows } = await db.query(
       `${SELECT_BASE} ${wc} ORDER BY a.data_adiantamento DESC, a.id DESC`,
       params
@@ -78,7 +79,8 @@ router.get('/', async (req, res, next) => {
 router.get('/:id(\\d+)', async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `${SELECT_BASE} WHERE a.id = $1`, [req.params.id]
+      `${SELECT_BASE} WHERE a.id = $1 AND a.organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado' });
     res.json(rows[0]);
@@ -86,7 +88,6 @@ router.get('/:id(\\d+)', async (req, res, next) => {
 });
 
 // ════ ALERTA: pendentes por beneficiário ═════════════════════════════════════
-// Usado no frontend para avisar antes de criar adiantamento duplicado
 // GET /api/financeiro/adiantamentos/pendentes?motorista_id=&veiculo_id=&ajudante_id=
 router.get('/pendentes', async (req, res, next) => {
   try {
@@ -94,8 +95,8 @@ router.get('/pendentes', async (req, res, next) => {
     if (!motorista_id && !veiculo_id && !ajudante_id) {
       return res.status(400).json({ error: 'Informe motorista_id, veiculo_id ou ajudante_id' });
     }
-    const where = [`a.status = 'pendente'`];
-    const params = [];
+    const where = [`a.status = 'pendente'`, `a.organizacao_id = $1`];
+    const params = [req.organizacao_id];
     if (motorista_id) { params.push(motorista_id); where.push(`a.motorista_id = $${params.length}`); }
     if (veiculo_id)   { params.push(veiculo_id);   where.push(`a.veiculo_id = $${params.length}`); }
     if (ajudante_id)  { params.push(ajudante_id);  where.push(`a.ajudante_id = $${params.length}`); }
@@ -152,8 +153,8 @@ router.post('/', adtoUpload.single('comprovante'), async (req, res, next) => {
     const cpInsert = await client.query(
       `INSERT INTO logi_contas_pagar
         (ordem_id, motorista_id, valor, vencimento, data_pagamento,
-         status, tipo_lancamento, descricao, obs)
-       VALUES ($1,$2,$3,$4,$5,'pago','adiantamento',$6,$7)
+         status, tipo_lancamento, descricao, obs, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,'pago','adiantamento',$6,$7,$8)
        RETURNING id`,
       [
         ordem_id || null,
@@ -163,6 +164,7 @@ router.post('/', adtoUpload.single('comprovante'), async (req, res, next) => {
         dataAdto,
         descricaoCP,
         observacao || null,
+        req.organizacao_id,
       ]
     );
     const contaPagarId = cpInsert.rows[0].id;
@@ -173,8 +175,8 @@ router.post('/', adtoUpload.single('comprovante'), async (req, res, next) => {
         (tipo_beneficiario, motorista_id, ajudante_id, veiculo_id, ordem_id,
          valor, data_adiantamento, forma_pagamento,
          comprovante_nome, comprovante_path,
-         conta_pagar_id, observacao, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         conta_pagar_id, observacao, criado_por, organizacao_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING id`,
       [
         tipo_beneficiario,
@@ -190,6 +192,7 @@ router.post('/', adtoUpload.single('comprovante'), async (req, res, next) => {
         contaPagarId,
         observacao || null,
         usuarioId,
+        req.organizacao_id,
       ]
     );
 
@@ -197,7 +200,8 @@ router.post('/', adtoUpload.single('comprovante'), async (req, res, next) => {
 
     // 4. Retorna o registro completo
     const { rows } = await db.query(
-      `${SELECT_BASE} WHERE a.id = $1`, [adtoInsert.rows[0].id]
+      `${SELECT_BASE} WHERE a.id = $1 AND a.organizacao_id = $2`,
+      [adtoInsert.rows[0].id, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -217,9 +221,9 @@ router.patch('/:id', async (req, res, next) => {
       `UPDATE logi_adiantamentos
        SET observacao = COALESCE($1, observacao),
            forma_pagamento = COALESCE($2, forma_pagamento)
-       WHERE id = $3 AND status = 'pendente'
+       WHERE id = $3 AND organizacao_id = $4 AND status = 'pendente'
        RETURNING *`,
-      [observacao, forma_pagamento, req.params.id]
+      [observacao, forma_pagamento, req.params.id, req.organizacao_id]
     );
     if (!rows.length) {
       return res.status(404).json({ error: 'Adiantamento não encontrado ou já descontado/cancelado' });
@@ -230,7 +234,6 @@ router.patch('/:id', async (req, res, next) => {
 
 // ════ ABATER no acerto ════════════════════════════════════════════════════════
 // PATCH /api/financeiro/adiantamentos/:id/abater
-// body: { cp_acerto_id, valor_descontado }
 router.patch('/:id/abater', async (req, res, next) => {
   const client = await db.pool.connect();
   try {
@@ -243,8 +246,9 @@ router.patch('/:id/abater', async (req, res, next) => {
     await client.query('BEGIN');
 
     const cur = await client.query(
-      `SELECT valor, valor_descontado, status FROM logi_adiantamentos WHERE id = $1 FOR UPDATE`,
-      [req.params.id]
+      `SELECT valor, valor_descontado, status FROM logi_adiantamentos
+        WHERE id = $1 AND organizacao_id = $2 FOR UPDATE`,
+      [req.params.id, req.organizacao_id]
     );
     if (!cur.rows.length) {
       await client.query('ROLLBACK');
@@ -266,8 +270,8 @@ router.patch('/:id/abater', async (req, res, next) => {
     const { rows } = await client.query(
       `UPDATE logi_adiantamentos
        SET valor_descontado = $1, status = $2, cp_acerto_id = $3
-       WHERE id = $4 RETURNING *`,
-      [novoDescontado, novoStatus, cp_acerto_id, req.params.id]
+       WHERE id = $4 AND organizacao_id = $5 RETURNING *`,
+      [novoDescontado, novoStatus, cp_acerto_id, req.params.id, req.organizacao_id]
     );
 
     await client.query('COMMIT');
@@ -282,14 +286,14 @@ router.patch('/:id/abater', async (req, res, next) => {
 
 // ════ CANCELAR ══════════════════════════════════════════════════════════════
 // DELETE /api/financeiro/adiantamentos/:id
-// Soft delete: marca adiantamento e CP de origem como cancelados
 router.delete('/:id', async (req, res, next) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const cur = await client.query(
-      `SELECT conta_pagar_id, status FROM logi_adiantamentos WHERE id = $1 FOR UPDATE`,
-      [req.params.id]
+      `SELECT conta_pagar_id, status FROM logi_adiantamentos
+        WHERE id = $1 AND organizacao_id = $2 FOR UPDATE`,
+      [req.params.id, req.organizacao_id]
     );
     if (!cur.rows.length) {
       await client.query('ROLLBACK');
@@ -301,13 +305,13 @@ router.delete('/:id', async (req, res, next) => {
     }
 
     await client.query(
-      `UPDATE logi_adiantamentos SET status='cancelado' WHERE id=$1`,
-      [req.params.id]
+      `UPDATE logi_adiantamentos SET status='cancelado' WHERE id=$1 AND organizacao_id=$2`,
+      [req.params.id, req.organizacao_id]
     );
     if (cur.rows[0].conta_pagar_id) {
       await client.query(
-        `UPDATE logi_contas_pagar SET status='cancelado' WHERE id=$1`,
-        [cur.rows[0].conta_pagar_id]
+        `UPDATE logi_contas_pagar SET status='cancelado' WHERE id=$1 AND organizacao_id=$2`,
+        [cur.rows[0].conta_pagar_id, req.organizacao_id]
       );
     }
     await client.query('COMMIT');

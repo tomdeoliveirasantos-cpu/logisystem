@@ -6,8 +6,8 @@ const router = express.Router();
 // GET /api/relatorios/faturamento?mes=2026-01
 router.get('/faturamento', async (req, res, next) => {
   try {
-    const { mes } = req.query; // formato YYYY-MM
-    const params = mes ? [`${mes}%`] : ['%'];
+    const { mes } = req.query;
+    const likeParam = mes ? `${mes}%` : '%';
     const { rows } = await db.query(
       `SELECT
          v.tipo                              AS veiculo_tipo,
@@ -19,13 +19,13 @@ router.get('/faturamento', async (req, res, next) => {
          COALESCE(SUM(cp.valor), 0)          AS valor_pagar,
          COALESCE(SUM(cr.valor) - SUM(cp.valor), 0) AS margem
        FROM logi_ordens_transporte o
-       LEFT JOIN logi_veiculos v          ON v.id = o.veiculo_id
-       LEFT JOIN logi_contas_receber cr   ON cr.ordem_id = o.id
-       LEFT JOIN logi_contas_pagar cp     ON cp.ordem_id = o.id
-       WHERE o.data::text LIKE $1
+       LEFT JOIN logi_veiculos v          ON v.id = o.veiculo_id AND v.organizacao_id = o.organizacao_id
+       LEFT JOIN logi_contas_receber cr   ON cr.ordem_id = o.id  AND cr.organizacao_id = o.organizacao_id
+       LEFT JOIN logi_contas_pagar cp     ON cp.ordem_id = o.id  AND cp.organizacao_id = o.organizacao_id
+       WHERE o.data::text LIKE $1 AND o.organizacao_id = $2
        GROUP BY v.tipo
        ORDER BY valor_receber DESC`,
-      params
+      [likeParam, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -35,7 +35,7 @@ router.get('/faturamento', async (req, res, next) => {
 router.get('/resumo-diario', async (req, res, next) => {
   try {
     const { data } = req.query;
-    const params = data ? [data] : [new Date().toISOString().split('T')[0]];
+    const dataParam = data || new Date().toISOString().split('T')[0];
     const { rows } = await db.query(
       `SELECT
          o.numero_rota,
@@ -51,12 +51,12 @@ router.get('/resumo-diario', async (req, res, next) => {
            NULLIF(COUNT(o.id),0) * 100, 1
          )                                    AS pct_entrega
        FROM logi_ordens_transporte o
-       LEFT JOIN logi_motoristas m ON m.id = o.motorista_id
-       LEFT JOIN logi_veiculos   v ON v.id = o.veiculo_id
-       WHERE o.data = $1
+       LEFT JOIN logi_motoristas m ON m.id = o.motorista_id AND m.organizacao_id = o.organizacao_id
+       LEFT JOIN logi_veiculos   v ON v.id = o.veiculo_id   AND v.organizacao_id = o.organizacao_id
+       WHERE o.data = $1 AND o.organizacao_id = $2
        GROUP BY o.numero_rota, m.nome, v.placa, v.tipo
        ORDER BY o.numero_rota`,
-      params
+      [dataParam, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -66,7 +66,11 @@ router.get('/resumo-diario', async (req, res, next) => {
 router.get('/evolucao-diaria', async (req, res, next) => {
   try {
     const { inicio, fim } = req.query;
-    const params = [inicio || '2026-01-01', fim || new Date().toISOString().split('T')[0]];
+    const params = [
+      inicio || '2026-01-01',
+      fim    || new Date().toISOString().split('T')[0],
+      req.organizacao_id,
+    ];
     const { rows } = await db.query(
       `SELECT
          o.data,
@@ -76,8 +80,8 @@ router.get('/evolucao-diaria', async (req, res, next) => {
          SUM(CASE WHEN o.status='devolucao' THEN 1 ELSE 0 END) AS devolucoes,
          COALESCE(SUM(cr.valor), 0)            AS faturado
        FROM logi_ordens_transporte o
-       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id
-       WHERE o.data BETWEEN $1 AND $2
+       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.organizacao_id = o.organizacao_id
+       WHERE o.data BETWEEN $1 AND $2 AND o.organizacao_id = $3
        GROUP BY o.data
        ORDER BY o.data`,
       params
@@ -98,8 +102,10 @@ router.get('/contas-pagar-resumo', async (req, res, next) => {
          SUM(CASE WHEN cp.status='pago'     THEN cp.valor ELSE 0 END) AS pago,
          SUM(CASE WHEN cp.status='vencido'  THEN cp.valor ELSE 0 END) AS vencido
        FROM logi_contas_pagar cp
-       LEFT JOIN logi_transportadoras t ON t.id = cp.transportadora_id
-       GROUP BY t.nome ORDER BY total DESC`
+       LEFT JOIN logi_transportadoras t ON t.id = cp.transportadora_id AND t.organizacao_id = cp.organizacao_id
+       WHERE cp.organizacao_id = $1
+       GROUP BY t.nome ORDER BY total DESC`,
+      [req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -117,7 +123,9 @@ router.get('/contas-receber-resumo', async (req, res, next) => {
          SUM(CASE WHEN cr.status='recebido'  THEN cr.valor ELSE 0 END) AS recebido,
          SUM(CASE WHEN cr.status='vencido'   THEN cr.valor ELSE 0 END) AS vencido
        FROM logi_contas_receber cr
-       GROUP BY cr.cliente ORDER BY total DESC LIMIT 50`
+       WHERE cr.organizacao_id = $1
+       GROUP BY cr.cliente ORDER BY total DESC LIMIT 50`,
+      [req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -127,7 +135,7 @@ router.get('/contas-receber-resumo', async (req, res, next) => {
 router.get('/rentabilidade-regiao', async (req, res, next) => {
   try {
     const { mes } = req.query;
-    const params = mes ? [`${mes}%`] : ['%'];
+    const likeParam = mes ? `${mes}%` : '%';
     const { rows } = await db.query(
       `SELECT
          o.regiao,
@@ -139,13 +147,13 @@ router.get('/rentabilidade-regiao', async (req, res, next) => {
            THEN ROUND((SUM(cr.valor) - SUM(cp.valor))::numeric / SUM(cr.valor) * 100, 1)
            ELSE 0 END AS pct_margem
        FROM logi_ordens_transporte o
-       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.status != 'cancelado'
-       LEFT JOIN logi_contas_pagar cp ON cp.ordem_id = o.id AND cp.status != 'cancelado'
-       WHERE o.data::text LIKE $1 AND o.status != 'cancelado'
+       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.status != 'cancelado' AND cr.organizacao_id = o.organizacao_id
+       LEFT JOIN logi_contas_pagar   cp ON cp.ordem_id = o.id AND cp.status != 'cancelado' AND cp.organizacao_id = o.organizacao_id
+       WHERE o.data::text LIKE $1 AND o.status != 'cancelado' AND o.organizacao_id = $2
        GROUP BY o.regiao
        HAVING o.regiao IS NOT NULL
        ORDER BY margem DESC`,
-      params
+      [likeParam, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -168,7 +176,8 @@ router.get('/fechamento-mensal', async (req, res, next) => {
            COUNT(DISTINCT numero_rota) AS total_rotas,
            COUNT(DISTINCT motorista_id) AS motoristas_ativos,
            COUNT(DISTINCT veiculo_id) AS veiculos_ativos
-         FROM logi_ordens_transporte WHERE data::text LIKE $1`, [like]
+         FROM logi_ordens_transporte WHERE data::text LIKE $1 AND organizacao_id = $2`,
+        [like, req.organizacao_id]
       ),
       db.query(
         `SELECT
@@ -177,7 +186,8 @@ router.get('/fechamento-mensal', async (req, res, next) => {
            SUM(CASE WHEN status='pendente' THEN valor ELSE 0 END) AS em_aberto,
            SUM(CASE WHEN status='recebido' THEN valor ELSE 0 END) AS recebido,
            SUM(CASE WHEN status='cancelado' THEN valor ELSE 0 END) AS cancelado
-         FROM logi_contas_receber WHERE vencimento::text LIKE $1`, [like]
+         FROM logi_contas_receber WHERE vencimento::text LIKE $1 AND organizacao_id = $2`,
+        [like, req.organizacao_id]
       ),
       db.query(
         `SELECT
@@ -189,7 +199,8 @@ router.get('/fechamento-mensal', async (req, res, next) => {
            SUM(CASE WHEN tipo_lancamento='frete_terceiro' THEN valor ELSE 0 END) AS frete_terceiro,
            SUM(CASE WHEN tipo_lancamento='diaria_motorista' THEN valor ELSE 0 END) AS diaria_motorista,
            SUM(CASE WHEN tipo_lancamento='diaria_ajudante' THEN valor ELSE 0 END) AS diaria_ajudante
-         FROM logi_contas_pagar WHERE vencimento::text LIKE $1`, [like]
+         FROM logi_contas_pagar WHERE vencimento::text LIKE $1 AND organizacao_id = $2`,
+        [like, req.organizacao_id]
       ),
     ]);
 
@@ -210,10 +221,10 @@ router.get('/notificacoes', async (req, res, next) => {
     const em7dias = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
 
     const [cpVencidas, crVencidas, cpVencendo, crVencendo] = await Promise.all([
-      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_pagar WHERE status='pendente' AND vencimento < $1", [hoje]),
-      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_receber WHERE status='pendente' AND vencimento < $1", [hoje]),
-      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_pagar WHERE status='pendente' AND vencimento BETWEEN $1 AND $2", [hoje, em7dias]),
-      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_receber WHERE status='pendente' AND vencimento BETWEEN $1 AND $2", [hoje, em7dias]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_pagar WHERE status='pendente' AND vencimento < $1 AND organizacao_id = $2", [hoje, req.organizacao_id]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_receber WHERE status='pendente' AND vencimento < $1 AND organizacao_id = $2", [hoje, req.organizacao_id]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_pagar WHERE status='pendente' AND vencimento BETWEEN $1 AND $2 AND organizacao_id = $3", [hoje, em7dias, req.organizacao_id]),
+      db.query("SELECT count(*)::int as c, COALESCE(sum(valor),0) as v FROM logi_contas_receber WHERE status='pendente' AND vencimento BETWEEN $1 AND $2 AND organizacao_id = $3", [hoje, em7dias, req.organizacao_id]),
     ]);
 
     res.json({
@@ -244,14 +255,17 @@ router.get('/romaneio', async (req, res, next) => {
       where.push(`o.data = $1`);
     }
     if (rota) { params.push(rota); where.push(`o.numero_rota = $${params.length}`); }
+    // Sempre filtrar por org
+    params.push(req.organizacao_id);
+    where.push(`o.organizacao_id = $${params.length}`);
 
     const { rows } = await db.query(
       `SELECT o.*, m.nome AS motorista_nome, v.placa, v.tipo AS veiculo_tipo,
               c.nome AS cliente_cadastrado, c.logradouro, c.numero AS cli_numero, c.bairro, c.cidade
        FROM logi_ordens_transporte o
-       LEFT JOIN logi_motoristas m ON m.id = o.motorista_id
-       LEFT JOIN logi_veiculos v ON v.id = o.veiculo_id
-       LEFT JOIN logi_clientes c ON c.id = o.cliente_id
+       LEFT JOIN logi_motoristas m ON m.id = o.motorista_id AND m.organizacao_id = o.organizacao_id
+       LEFT JOIN logi_veiculos   v ON v.id = o.veiculo_id   AND v.organizacao_id = o.organizacao_id
+       LEFT JOIN logi_clientes   c ON c.id = o.cliente_id   AND c.organizacao_id = o.organizacao_id
        WHERE ${where.join(' AND ')}
        ORDER BY o.numero_rota, o.seq`,
       params
@@ -280,11 +294,12 @@ router.get('/km-por-veiculo', async (req, res, next) => {
               COALESCE(SUM(o.km_chegada - o.km_saida), 0) AS km_total,
               COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio
        FROM logi_ordens_transporte o
-       JOIN logi_veiculos v ON v.id = o.veiculo_id
+       JOIN logi_veiculos v ON v.id = o.veiculo_id AND v.organizacao_id = o.organizacao_id
        WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
+         AND o.organizacao_id = $2
        GROUP BY v.placa, v.tipo, v.modelo
        ORDER BY km_total DESC`,
-      [like]
+      [like, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -307,12 +322,13 @@ router.get('/km-por-regiao', async (req, res, next) => {
                 THEN ROUND(COALESCE(SUM(cr.valor), 0) / SUM(o.km_chegada - o.km_saida), 2)
                 ELSE 0 END AS receita_por_km
        FROM logi_ordens_transporte o
-       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.status != 'cancelado'
+       LEFT JOIN logi_contas_receber cr ON cr.ordem_id = o.id AND cr.status != 'cancelado' AND cr.organizacao_id = o.organizacao_id
        WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
          AND o.regiao IS NOT NULL AND o.status != 'cancelado'
+         AND o.organizacao_id = $2
        GROUP BY o.regiao
        ORDER BY km_total DESC`,
-      [like]
+      [like, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -330,12 +346,12 @@ router.get('/km-por-motorista', async (req, res, next) => {
               COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio,
               COUNT(DISTINCT o.regiao) AS regioes_atendidas
        FROM logi_ordens_transporte o
-       JOIN logi_motoristas m ON m.id = o.motorista_id
+       JOIN logi_motoristas m ON m.id = o.motorista_id AND m.organizacao_id = o.organizacao_id
        WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
-         AND o.status != 'cancelado'
+         AND o.status != 'cancelado' AND o.organizacao_id = $2
        GROUP BY m.nome
        ORDER BY km_total DESC`,
-      [like]
+      [like, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -353,10 +369,10 @@ router.get('/km-evolucao-diaria', async (req, res, next) => {
               COALESCE(AVG(o.km_chegada - o.km_saida), 0) AS km_medio
        FROM logi_ordens_transporte o
        WHERE o.data::text LIKE $1 AND o.km_saida IS NOT NULL AND o.km_chegada IS NOT NULL
-         AND o.status != 'cancelado'
+         AND o.status != 'cancelado' AND o.organizacao_id = $2
        GROUP BY o.data
        ORDER BY o.data`,
-      [like]
+      [like, req.organizacao_id]
     );
     res.json(rows);
   } catch (err) { next(err); }

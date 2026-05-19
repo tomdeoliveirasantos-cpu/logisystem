@@ -33,8 +33,12 @@ export default function CadastrosMotorista() {
     if (gerandoConvite) return;
     setGerandoConvite(true);
     try {
-      await api.post('/motorista-cadastros/convites/gerar', { nome_motorista: nomeConvite });
-      showToast('Convite gerado!');
+      const resp = await api.post('/motorista-cadastros/convites/gerar', { nome_motorista: nomeConvite });
+      if (resp?._reused) {
+        showToast(resp._msg || 'Já existia convite, retornando o existente.', 'warning');
+      } else {
+        showToast('Convite gerado!');
+      }
       refetchConvites();
       setModalConvite(false);
       setNomeConvite('');
@@ -84,6 +88,70 @@ export default function CadastrosMotorista() {
       setDetalhe(updated);
       refetch();
     } catch(e) { showToast(e.message, 'error'); }
+  };
+
+  // Comprime imagem grande antes do upload (mesma lógica do cadastro público)
+  const compressImage = (file) => new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return resolve(file);
+    if (file.size < 1024 * 1024) return resolve(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1600;
+        let { width: w, height: h } = img;
+        if (w > MAX || h > MAX) {
+          if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+          else        { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Falha ao comprimir'));
+          const nomeBase = file.name.replace(/\.(jpe?g|png|webp|heic|heif)$/i, '');
+          resolve(new File([blob], `${nomeBase}.jpg`, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.75);
+      };
+      img.onerror = () => reject(new Error('Falha ao carregar imagem'));
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+    reader.readAsDataURL(file);
+  });
+
+  // Anexar documento manualmente pelo admin
+  const anexarDoc = async (campo, file, evento) => {
+    if (!file || !detalhe) return;
+    try {
+      // Comprime se for imagem grande
+      const arquivoFinal = await compressImage(file);
+      if (arquivoFinal.size > 10 * 1024 * 1024) {
+        showToast(`Arquivo grande demais: ${(arquivoFinal.size/1024/1024).toFixed(1)}MB (máx 10MB)`, 'error');
+        if (evento?.target) evento.target.value = '';
+        return;
+      }
+      const fd = new FormData();
+      fd.append('arquivo', arquivoFinal);
+      const token = localStorage.getItem('logi_token');
+      const res = await fetch(`https://api.wsdevsoft.com/api/motorista-cadastros/${detalhe.id}/anexar/${campo}`, {
+        method: 'PATCH',
+        body: fd,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Erro HTTP ${res.status}`);
+      }
+      const atualizado = await res.json();
+      setDetalhe(atualizado);
+      showToast('Documento anexado!');
+      refetch();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      if (evento?.target) evento.target.value = '';
+    }
   };
 
   // Aprovar/Reprovar
@@ -361,10 +429,10 @@ export default function CadastrosMotorista() {
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Checklist de Documentos</h4>
                   <div style={{display:'grid',gap:8,marginBottom:16}}>
                     {[
-                      { field: 'check_cnh', label: 'CNH', doc: detalhe.doc_cnh },
-                      { field: 'check_cnpj', label: 'CNPJ / Contrato Social', doc: detalhe.doc_cnpj_contrato },
-                      { field: 'check_rntrc', label: 'RNTRC (ANTT)', doc: detalhe.doc_rntrc },
-                      { field: 'check_endereco', label: 'Comprovante de Endereço', doc: detalhe.doc_comprovante_endereco },
+                      { field: 'check_cnh', label: 'CNH', doc: detalhe.doc_cnh, campo: 'cnh' },
+                      { field: 'check_cnpj', label: 'CNPJ / Contrato Social', doc: detalhe.doc_cnpj_contrato, campo: 'cnpj_contrato' },
+                      { field: 'check_rntrc', label: 'RNTRC (ANTT)', doc: detalhe.doc_rntrc, campo: 'rntrc' },
+                      { field: 'check_endereco', label: 'Comprovante de Endereço', doc: detalhe.doc_comprovante_endereco, campo: 'comprovante_endereco' },
                     ].map(item => (
                       <div key={item.field} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'var(--bg3)',borderRadius:8}}>
                         <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',flex:1}}>
@@ -376,18 +444,30 @@ export default function CadastrosMotorista() {
                           />
                           <span style={{fontSize:13,fontWeight:500}}>{item.label}</span>
                         </label>
-                        {item.doc && (
-                          <a
-                            href={`https://api.wsdevsoft.com${item.doc}`}
-                            target="_blank"
-                            rel="noopener"
-                            className="btn btn-ghost btn-sm"
-                            style={{fontSize:11}}
-                          >
-                            Ver documento ↗
-                          </a>
+                        {item.doc ? (
+                          <>
+                            <a
+                              href={`https://api.wsdevsoft.com${item.doc}`}
+                              target="_blank"
+                              rel="noopener"
+                              className="btn btn-ghost btn-sm"
+                              style={{fontSize:11}}
+                            >
+                              Ver documento ↗
+                            </a>
+                            <label className="btn btn-ghost btn-sm" style={{fontSize:11, cursor: 'pointer', margin:0}}>
+                              ↻ Substituir
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{display:'none'}}
+                                onChange={(e) => anexarDoc(item.campo, e.target.files[0], e)} />
+                            </label>
+                          </>
+                        ) : (
+                          <label className="btn btn-primary btn-sm" style={{fontSize:11, cursor: 'pointer', margin:0}}>
+                            📎 Anexar
+                            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{display:'none'}}
+                              onChange={(e) => anexarDoc(item.campo, e.target.files[0], e)} />
+                          </label>
                         )}
-                        {!item.doc && <span style={{fontSize:11,color:'var(--text3)'}}>Não enviado</span>}
                       </div>
                     ))}
                   </div>

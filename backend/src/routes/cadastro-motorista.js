@@ -64,6 +64,29 @@ const docFields = upload.fields([
   { name: 'assinatura', maxCount: 1 },
 ]);
 
+// Storage para upload manual pelo admin (usa req.params.id do cadastro)
+const adminStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(uploadsDir, 'admin', String(req.params.id));
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${file.fieldname}_${Date.now()}${ext}`);
+  },
+});
+const adminUpload = multer({
+  storage: adminStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('Tipo de arquivo não permitido. Use PDF, JPG, PNG ou WebP.'));
+  },
+});
+
 // Wrapper de docFields: traduz erros do multer em JSON limpo
 function docFieldsSafe(req, res, next) {
   docFields(req, res, (err) => {
@@ -251,19 +274,71 @@ adminRouter.get('/convites/todos', async (req, res, next) => {
 });
 
 // POST /convites/gerar — Gerar novo convite vinculado à org ativa
+//   Proteção tripla contra duplicidade:
+//   1. Verificação: se já existe convite "pendente" com mesmo nome nas últimas 24h
+//      na mesma org, retorna o convite existente (não cria novo).
+//   2. Convite SEM nome: dedupe por janela curta (5 min) para evitar duplo-clique.
+//   3. UNIQUE constraint parcial no banco (migration 026) como último fallback.
 adminRouter.post('/convites/gerar', async (req, res, next) => {
   try {
     const { nome_motorista } = req.body;
+    const nomeNorm = (nome_motorista || '').trim();
+
+    // ── Dedupe ──
+    let existente;
+    if (nomeNorm) {
+      // Nome informado: procura pendente das últimas 24h com mesmo nome (case-insensitive)
+      const r = await db.query(
+        `SELECT * FROM logi_cadastro_convites
+         WHERE organizacao_id = $1
+           AND status = 'pendente'
+           AND LOWER(TRIM(nome_motorista)) = LOWER($2)
+           AND created_at > NOW() - INTERVAL '24 hours'
+         ORDER BY created_at DESC LIMIT 1`,
+        [req.organizacao_id, nomeNorm]
+      );
+      existente = r.rows[0];
+    } else {
+      // Sem nome: janela curta de 5 min (apenas anti duplo-clique)
+      const r = await db.query(
+        `SELECT * FROM logi_cadastro_convites
+         WHERE organizacao_id = $1
+           AND status = 'pendente'
+           AND nome_motorista IS NULL
+           AND created_at > NOW() - INTERVAL '5 minutes'
+         ORDER BY created_at DESC LIMIT 1`,
+        [req.organizacao_id]
+      );
+      existente = r.rows[0];
+    }
+
+    if (existente) {
+      // Retorna o convite existente em vez de criar duplicata
+      return res.status(200).json({
+        ...existente,
+        _reused: true,
+        _msg: nomeNorm
+          ? `Já existe um convite pendente para "${nomeNorm}" (criado há pouco). Retornando o convite existente.`
+          : 'Já existe um convite recente sem nome. Retornando o convite existente.',
+      });
+    }
+
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
     const { rows } = await db.query(
       `INSERT INTO logi_cadastro_convites (token, nome_motorista, criado_por, expires_at, organizacao_id)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [token, nome_motorista || null, req.user?.nome || 'sistema', expiresAt, req.organizacao_id]
+      [token, nomeNorm || null, req.user?.nome || 'sistema', expiresAt, req.organizacao_id]
     );
     res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
+  } catch (err) {
+    // 23505 = unique_violation. Pode acontecer se 2 requests chegarem simultâneos.
+    if (err.code === '23505') {
+      return res.status(200).json({ _reused: true, _msg: 'Convite já existia (duplicidade evitada).' });
+    }
+    next(err);
+  }
 });
 
 // GET /:id — Detalhe de um cadastro
@@ -421,6 +496,42 @@ adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
 
     doc.end();
   } catch (err) { next(err); }
+});
+
+// PATCH /:id/anexar/:campo — Admin anexa manualmente um documento ao cadastro
+//   :campo deve ser um dos: cnh, cnpj_contrato, rntrc, comprovante_endereco
+//   Body: multipart com campo "arquivo"
+adminRouter.patch('/:id/anexar/:campo', (req, res, next) => {
+  adminUpload.single('arquivo')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'Arquivo muito grande (máximo 10MB).' });
+      }
+      return res.status(400).json({ error: err.message || 'Erro no upload' });
+    }
+    // Mapa campo => coluna do banco
+    const camposValidos = {
+      cnh: 'doc_cnh',
+      cnpj_contrato: 'doc_cnpj_contrato',
+      rntrc: 'doc_rntrc',
+      comprovante_endereco: 'doc_comprovante_endereco',
+    };
+    const coluna = camposValidos[req.params.campo];
+    if (!coluna) return res.status(400).json({ error: 'Campo inválido' });
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+
+    // Caminho público (acessado via /uploads/admin/:id/...)
+    const urlPath = `/uploads/admin/${req.params.id}/${req.file.filename}`;
+
+    db.query(
+      `UPDATE logi_motorista_cadastros SET ${coluna} = $1
+        WHERE id = $2 AND organizacao_id = $3 RETURNING *`,
+      [urlPath, req.params.id, req.organizacao_id]
+    ).then(({ rows }) => {
+      if (!rows.length) return res.status(404).json({ error: 'Cadastro não encontrado' });
+      res.json(rows[0]);
+    }).catch(next);
+  });
 });
 
 module.exports = { publicRouter, adminRouter };

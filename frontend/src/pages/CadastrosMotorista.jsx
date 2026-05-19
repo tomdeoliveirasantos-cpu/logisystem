@@ -22,20 +22,27 @@ export default function CadastrosMotorista() {
   const [detalhe, setDetalhe] = useState(null);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
   const [copied, setCopied] = useState('');
+  const [gerandoConvite, setGerandoConvite] = useState(false);
   const { toast, showToast } = useToast();
 
   const rows = cadastros || [];
   const conviteRows = convites || [];
 
-  // Gerar convite
+  // Gerar convite (com proteção contra duplo-clique)
   const gerarConvite = async () => {
+    if (gerandoConvite) return;
+    setGerandoConvite(true);
     try {
       await api.post('/motorista-cadastros/convites/gerar', { nome_motorista: nomeConvite });
       showToast('Convite gerado!');
       refetchConvites();
       setModalConvite(false);
       setNomeConvite('');
-    } catch(e) { showToast(e.message, 'error'); }
+    } catch(e) {
+      showToast(e.message, 'error');
+    } finally {
+      setGerandoConvite(false);
+    }
   };
 
   // Copiar link
@@ -285,8 +292,10 @@ export default function CadastrosMotorista() {
               </p>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={()=>setModalConvite(false)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={gerarConvite}>Gerar Convite</button>
+              <button className="btn btn-ghost" onClick={()=>setModalConvite(false)} disabled={gerandoConvite}>Cancelar</button>
+              <button className="btn btn-primary" onClick={gerarConvite} disabled={gerandoConvite} style={{opacity: gerandoConvite ? 0.6 : 1}}>
+                {gerandoConvite ? 'Gerando...' : 'Gerar Convite'}
+              </button>
             </div>
           </div>
         </div>

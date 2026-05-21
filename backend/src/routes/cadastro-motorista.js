@@ -378,6 +378,49 @@ adminRouter.patch('/:id/validar', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// PATCH /:id/dados — Editar dados do cadastro (admin pode corrigir erros)
+//   Body: qualquer subset dos campos editáveis abaixo (whitelist)
+adminRouter.patch('/:id/dados', async (req, res, next) => {
+  try {
+    const CAMPOS_EDITAVEIS = [
+      'nome','cpf','rg','cnh_numero','cnh_categoria','cnh_validade',
+      'endereco','numero','complemento','bairro','cidade','estado','cep','telefone','email',
+      'razao_social','cnpj','endereco_pj','numero_pj','complemento_pj','bairro_pj','cidade_pj','estado_pj','cep_pj','data_abertura',
+      'veiculo_placa','veiculo_modelo','veiculo_ano','veiculo_rntrc',
+      'banco','agencia','conta','tipo_conta','pix','tipo_colaborador',
+    ];
+
+    // Monta SET dinamicamente apenas com os campos enviados e permitidos
+    const sets = [];
+    const values = [];
+    let i = 1;
+    for (const campo of CAMPOS_EDITAVEIS) {
+      if (Object.prototype.hasOwnProperty.call(req.body, campo)) {
+        const v = req.body[campo];
+        // Converte string vazia em NULL para datas / nullable
+        const valor = (campo.endsWith('_validade') || campo === 'data_abertura') && v === ''
+          ? null
+          : v;
+        sets.push(`${campo} = $${i++}`);
+        values.push(valor);
+      }
+    }
+
+    if (!sets.length) return res.status(400).json({ error: 'Nenhum campo válido para atualizar' });
+
+    sets.push(`updated_at = NOW()`);
+    values.push(req.params.id);     // $i
+    values.push(req.organizacao_id); // $i+1
+
+    const sql = `UPDATE logi_motorista_cadastros SET ${sets.join(', ')}
+                 WHERE id = $${i} AND organizacao_id = $${i + 1}
+                 RETURNING *`;
+    const { rows } = await db.query(sql, values);
+    if (!rows.length) return res.status(404).json({ error: 'Cadastro não encontrado' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 // GET /:id/contrato-pdf — Gerar PDF do contrato
 adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
   try {

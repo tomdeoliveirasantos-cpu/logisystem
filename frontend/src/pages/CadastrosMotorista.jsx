@@ -28,6 +28,23 @@ export default function CadastrosMotorista() {
   const rows = cadastros || [];
   const conviteRows = convites || [];
 
+  // Busca + ordenação alfabética (case-insensitive, ignora acento)
+  const [busca, setBusca] = useState('');
+  const normaliza = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const buscaNorm = normaliza(busca.trim());
+
+  const filtrarPorBusca = (r) => {
+    if (!buscaNorm) return true;
+    const camposBusca = [r.nome, r.nome_motorista, r.cpf, r.cnpj, r.telefone, r.email, r.veiculo_placa].filter(Boolean);
+    return camposBusca.some(v => normaliza(v).includes(buscaNorm));
+  };
+
+  const ordemAlfabetica = (a, b) =>
+    normaliza(a.nome || a.nome_motorista || '').localeCompare(normaliza(b.nome || b.nome_motorista || ''));
+
+  const rowsVisiveis = rows.filter(filtrarPorBusca).sort(ordemAlfabetica);
+  const conviteRowsVisiveis = conviteRows.filter(filtrarPorBusca).sort(ordemAlfabetica);
+
   // Gerar convite (com proteção contra duplo-clique)
   const gerarConvite = async () => {
     if (gerandoConvite) return;
@@ -75,8 +92,62 @@ export default function CadastrosMotorista() {
     try {
       const data = await api.get(`/motorista-cadastros/${id}`);
       setDetalhe(data);
+      setEdit(data); // inicializa estado de edição
     } catch(e) { showToast(e.message, 'error'); }
     setLoadingDetalhe(false);
+  };
+
+  // ── Edição de dados do cadastro ──
+  // edit é uma cópia do detalhe; mudanças vão pra edit, só persistem no PATCH
+  const [edit, setEdit] = useState(null);
+  const [salvandoEdicoes, setSalvandoEdicoes] = useState(false);
+  const setCampo = (campo, valor) => setEdit(e => ({ ...e, [campo]: valor }));
+
+  // Detecta se há campos alterados (compara só os editáveis)
+  const CAMPOS_EDITAVEIS = [
+    'nome','cpf','rg','cnh_numero','cnh_categoria','cnh_validade',
+    'endereco','numero','complemento','bairro','cidade','estado','cep','telefone','email',
+    'razao_social','cnpj','endereco_pj','numero_pj','complemento_pj','bairro_pj','cidade_pj','estado_pj','cep_pj','data_abertura',
+    'veiculo_placa','veiculo_modelo','veiculo_ano','veiculo_rntrc',
+    'banco','agencia','conta','tipo_conta','pix','tipo_colaborador',
+  ];
+  const valorNorm = (v) => v == null ? '' : String(v).substring(0,10); // só pra comparar (dates podem vir com timestamp)
+  const houveEdicao = detalhe && edit && CAMPOS_EDITAVEIS.some(c => {
+    const a = (c === 'cnh_validade' || c === 'data_abertura') ? valorNorm(edit[c]) : (edit[c] ?? '');
+    const b = (c === 'cnh_validade' || c === 'data_abertura') ? valorNorm(detalhe[c]) : (detalhe[c] ?? '');
+    return String(a) !== String(b);
+  });
+
+  const salvarEdicoes = async () => {
+    if (!edit || salvandoEdicoes) return;
+    setSalvandoEdicoes(true);
+    try {
+      const payload = {};
+      for (const c of CAMPOS_EDITAVEIS) {
+        if (edit[c] !== undefined) {
+          // Datas vazias enviam null
+          if ((c === 'cnh_validade' || c === 'data_abertura') && (!edit[c] || edit[c] === '')) {
+            payload[c] = null;
+          } else {
+            // Datas com timestamp -> só YYYY-MM-DD
+            if ((c === 'cnh_validade' || c === 'data_abertura') && typeof edit[c] === 'string' && edit[c].length > 10) {
+              payload[c] = edit[c].substring(0,10);
+            } else {
+              payload[c] = edit[c];
+            }
+          }
+        }
+      }
+      const atualizado = await api.patch(`/motorista-cadastros/${detalhe.id}/dados`, payload);
+      setDetalhe(atualizado);
+      setEdit(atualizado);
+      refetch();
+      showToast('Alterações salvas!');
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSalvandoEdicoes(false);
+    }
   };
 
   // Toggle check
@@ -86,6 +157,7 @@ export default function CadastrosMotorista() {
     try {
       const updated = await api.patch(`/motorista-cadastros/${detalhe.id}/validar`, { [field]: newVal });
       setDetalhe(updated);
+      setEdit(prev => ({ ...prev, [field]: newVal })); // mantém edit sincronizado
       refetch();
     } catch(e) { showToast(e.message, 'error'); }
   };
@@ -145,6 +217,8 @@ export default function CadastrosMotorista() {
       }
       const atualizado = await res.json();
       setDetalhe(atualizado);
+      // Sincroniza edit (preservando edições em campos texto que não foram salvas)
+      setEdit(prev => ({ ...prev, ...atualizado }));
       showToast('Documento anexado!');
       refetch();
     } catch (e) {
@@ -159,6 +233,7 @@ export default function CadastrosMotorista() {
     try {
       const updated = await api.patch(`/motorista-cadastros/${detalhe.id}/validar`, { status });
       setDetalhe(updated);
+      setEdit(prev => ({ ...prev, ...updated }));
       showToast(status === 'aprovado' ? 'Cadastro aprovado!' : 'Cadastro reprovado.');
       refetch();
     } catch(e) { showToast(e.message, 'error'); }
@@ -213,7 +288,7 @@ export default function CadastrosMotorista() {
 
       <div className="page-body">
         {/* Tabs */}
-        <div style={{display:'flex',gap:4,marginBottom:16}}>
+        <div style={{display:'flex',gap:4,marginBottom:12,alignItems:'center',flexWrap:'wrap'}}>
           <button
             className={`btn btn-sm ${tab==='cadastros' ? 'btn-primary' : 'btn-ghost'}`}
             onClick={()=>setTab('cadastros')}
@@ -226,6 +301,34 @@ export default function CadastrosMotorista() {
           >
             Convites ({conviteRows.length})
           </button>
+        </div>
+
+        {/* Busca */}
+        <div style={{marginBottom:12, position:'relative', maxWidth:420}}>
+          <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',fontSize:14,opacity:0.6,pointerEvents:'none'}}>🔍</span>
+          <input
+            type="text"
+            value={busca}
+            onChange={e=>setBusca(e.target.value)}
+            placeholder="Buscar por nome, CPF, CNPJ, telefone..."
+            style={{
+              width:'100%',
+              padding:'8px 32px 8px 32px',
+              border:'1px solid var(--bg3)',
+              borderRadius:8,
+              background:'var(--bg2)',
+              color:'var(--text1)',
+              fontSize:13,
+              outline:'none',
+            }}
+          />
+          {busca && (
+            <button
+              onClick={()=>setBusca('')}
+              style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:14,opacity:0.6}}
+              title="Limpar busca"
+            >×</button>
+          )}
         </div>
 
         {/* ── Lista de Cadastros ── */}
@@ -246,7 +349,12 @@ export default function CadastrosMotorista() {
                     Nenhum cadastro recebido ainda
                   </td></tr>
                 )}
-                {rows.map(r => {
+                {!loading && rows.length > 0 && !rowsVisiveis.length && (
+                  <tr><td colSpan={8} style={{textAlign:'center',color:'var(--text3)',padding:'32px 0'}}>
+                    Nenhum cadastro encontrado para "{busca}"
+                  </td></tr>
+                )}
+                {rowsVisiveis.map(r => {
                   const checks = [r.check_cnh, r.check_cnpj, r.check_rntrc, r.check_endereco].filter(Boolean).length;
                   const st = statusMap[r.status] || statusMap.pendente;
                   return (
@@ -289,7 +397,7 @@ export default function CadastrosMotorista() {
                     Nenhum convite gerado
                   </td></tr>
                 )}
-                {conviteRows.map(c => {
+                {conviteRowsVisiveis.map(c => {
                   const expired = c.expires_at && new Date(c.expires_at) < new Date();
                   const st = c.status === 'preenchido' ? conviteStatusMap.preenchido : expired ? { type: 'red', label: 'Expirado' } : conviteStatusMap.pendente;
                   const ativo = c.status !== 'preenchido' && !expired;
@@ -371,11 +479,11 @@ export default function CadastrosMotorista() {
 
       {/* ── Modal Detalhe do Cadastro ── */}
       {modalDetalhe && (
-        <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&(setModalDetalhe(null),setDetalhe(null))}>
+        <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&(setModalDetalhe(null),setDetalhe(null),setEdit(null))}>
           <div className="modal" style={{maxWidth:700, maxHeight:'90vh', overflow:'auto'}}>
             <div className="modal-header">
               <span className="modal-title">Detalhe do Cadastro</span>
-              <button className="modal-close" onClick={()=>{setModalDetalhe(null);setDetalhe(null);}}>×</button>
+              <button className="modal-close" onClick={()=>{setModalDetalhe(null);setDetalhe(null);setEdit(null);}}>×</button>
             </div>
             <div className="modal-body">
               {loadingDetalhe ? (
@@ -391,39 +499,163 @@ export default function CadastrosMotorista() {
                   {/* Dados PF */}
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Pessoa Física</h4>
                   <div className="form-grid cols-2" style={{marginBottom:16}}>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Nome</span><div className="fw-500">{detalhe.nome || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>CPF</span><div>{detalhe.cpf || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>RG</span><div>{detalhe.rg || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>CNH</span><div>{detalhe.cnh_numero || '—'} ({detalhe.cnh_categoria || '—'}) val. {fmtDate(detalhe.cnh_validade)}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Endereço</span><div>{detalhe.endereco || '—'}, {detalhe.bairro || ''}, {detalhe.cidade || '—'}/{detalhe.estado || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Telefone / Email</span><div>{detalhe.telefone || '—'} | {detalhe.email || '—'}</div></div>
+                    <Field label="Nome">
+                      <Input value={edit?.nome || ''} onChange={e=>setCampo('nome', e.target.value)} />
+                    </Field>
+                    <Field label="CPF">
+                      <Input value={edit?.cpf || ''} onChange={e=>setCampo('cpf', e.target.value)} placeholder="000.000.000-00" />
+                    </Field>
+                    <Field label="RG">
+                      <Input value={edit?.rg || ''} onChange={e=>setCampo('rg', e.target.value)} />
+                    </Field>
+                    <Field label="Telefone">
+                      <Input value={edit?.telefone || ''} onChange={e=>setCampo('telefone', e.target.value)} />
+                    </Field>
+                    <Field label="E-mail">
+                      <Input value={edit?.email || ''} onChange={e=>setCampo('email', e.target.value)} />
+                    </Field>
+                    <Field label="Tipo de Colaborador">
+                      <Input value={edit?.tipo_colaborador || ''} onChange={e=>setCampo('tipo_colaborador', e.target.value)} />
+                    </Field>
+                    <Field label="CNH">
+                      <Input value={edit?.cnh_numero || ''} onChange={e=>setCampo('cnh_numero', e.target.value)} />
+                    </Field>
+                    <Field label="Categoria">
+                      <Input value={edit?.cnh_categoria || ''} onChange={e=>setCampo('cnh_categoria', e.target.value)} placeholder="A, B, C, D, E..." />
+                    </Field>
+                    <Field label="Validade CNH">
+                      <Input type="date" value={(edit?.cnh_validade || '').substring(0,10)} onChange={e=>setCampo('cnh_validade', e.target.value)} />
+                    </Field>
+                    <Field label="CEP">
+                      <Input value={edit?.cep || ''} onChange={e=>setCampo('cep', e.target.value)} />
+                    </Field>
+                    <div style={{gridColumn:'span 2'}}>
+                      <Field label="Endereço">
+                        <Input value={edit?.endereco || ''} onChange={e=>setCampo('endereco', e.target.value)} />
+                      </Field>
+                    </div>
+                    <Field label="Número">
+                      <Input value={edit?.numero || ''} onChange={e=>setCampo('numero', e.target.value)} />
+                    </Field>
+                    <Field label="Complemento">
+                      <Input value={edit?.complemento || ''} onChange={e=>setCampo('complemento', e.target.value)} />
+                    </Field>
+                    <Field label="Bairro">
+                      <Input value={edit?.bairro || ''} onChange={e=>setCampo('bairro', e.target.value)} />
+                    </Field>
+                    <Field label="Cidade">
+                      <Input value={edit?.cidade || ''} onChange={e=>setCampo('cidade', e.target.value)} />
+                    </Field>
+                    <Field label="UF">
+                      <Input value={edit?.estado || ''} onChange={e=>setCampo('estado', e.target.value)} maxLength={2} />
+                    </Field>
                   </div>
 
                   {/* Dados PJ */}
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Pessoa Jurídica</h4>
                   <div className="form-grid cols-2" style={{marginBottom:16}}>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Razão Social</span><div className="fw-500">{detalhe.razao_social || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>CNPJ</span><div>{detalhe.cnpj || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Endereço PJ</span><div>{detalhe.endereco_pj || '—'}, {detalhe.cidade_pj || '—'}/{detalhe.estado_pj || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Abertura</span><div>{fmtDate(detalhe.data_abertura)}</div></div>
+                    <Field label="Razão Social">
+                      <Input value={edit?.razao_social || ''} onChange={e=>setCampo('razao_social', e.target.value)} />
+                    </Field>
+                    <Field label="CNPJ">
+                      <Input value={edit?.cnpj || ''} onChange={e=>setCampo('cnpj', e.target.value)} placeholder="00.000.000/0000-00" />
+                    </Field>
+                    <Field label="Data de Abertura">
+                      <Input type="date" value={(edit?.data_abertura || '').substring(0,10)} onChange={e=>setCampo('data_abertura', e.target.value)} />
+                    </Field>
+                    <Field label="CEP PJ">
+                      <Input value={edit?.cep_pj || ''} onChange={e=>setCampo('cep_pj', e.target.value)} />
+                    </Field>
+                    <div style={{gridColumn:'span 2'}}>
+                      <Field label="Endereço PJ">
+                        <Input value={edit?.endereco_pj || ''} onChange={e=>setCampo('endereco_pj', e.target.value)} />
+                      </Field>
+                    </div>
+                    <Field label="Número PJ">
+                      <Input value={edit?.numero_pj || ''} onChange={e=>setCampo('numero_pj', e.target.value)} />
+                    </Field>
+                    <Field label="Complemento PJ">
+                      <Input value={edit?.complemento_pj || ''} onChange={e=>setCampo('complemento_pj', e.target.value)} />
+                    </Field>
+                    <Field label="Bairro PJ">
+                      <Input value={edit?.bairro_pj || ''} onChange={e=>setCampo('bairro_pj', e.target.value)} />
+                    </Field>
+                    <Field label="Cidade PJ">
+                      <Input value={edit?.cidade_pj || ''} onChange={e=>setCampo('cidade_pj', e.target.value)} />
+                    </Field>
+                    <Field label="UF PJ">
+                      <Input value={edit?.estado_pj || ''} onChange={e=>setCampo('estado_pj', e.target.value)} maxLength={2} />
+                    </Field>
                   </div>
 
                   {/* Veículo */}
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Veículo</h4>
                   <div className="form-grid cols-2" style={{marginBottom:16}}>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Placa</span><div className="badge badge-teal">{detalhe.veiculo_placa || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Modelo</span><div>{detalhe.veiculo_modelo || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Ano</span><div>{detalhe.veiculo_ano || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>RNTRC</span><div>{detalhe.veiculo_rntrc || '—'}</div></div>
+                    <Field label="Placa">
+                      <Input value={edit?.veiculo_placa || ''} onChange={e=>setCampo('veiculo_placa', e.target.value.toUpperCase())} />
+                    </Field>
+                    <Field label="Modelo">
+                      <Input value={edit?.veiculo_modelo || ''} onChange={e=>setCampo('veiculo_modelo', e.target.value)} />
+                    </Field>
+                    <Field label="Ano">
+                      <Input value={edit?.veiculo_ano || ''} onChange={e=>setCampo('veiculo_ano', e.target.value)} />
+                    </Field>
+                    <Field label="RNTRC">
+                      <Input value={edit?.veiculo_rntrc || ''} onChange={e=>setCampo('veiculo_rntrc', e.target.value)} />
+                    </Field>
                   </div>
 
                   {/* Bancário */}
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Dados Bancários</h4>
                   <div className="form-grid cols-2" style={{marginBottom:16}}>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Banco</span><div>{detalhe.banco || '—'}</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>Agência / Conta</span><div>{detalhe.agencia || '—'} / {detalhe.conta || '—'} ({detalhe.tipo_conta || '—'})</div></div>
-                    <div><span style={{fontSize:11,color:'var(--text3)'}}>PIX</span><div className="fw-500">{detalhe.pix || '—'}</div></div>
+                    <Field label="Banco">
+                      <Input value={edit?.banco || ''} onChange={e=>setCampo('banco', e.target.value)} />
+                    </Field>
+                    <Field label="Agência">
+                      <Input value={edit?.agencia || ''} onChange={e=>setCampo('agencia', e.target.value)} />
+                    </Field>
+                    <Field label="Conta">
+                      <Input value={edit?.conta || ''} onChange={e=>setCampo('conta', e.target.value)} />
+                    </Field>
+                    <Field label="Tipo de Conta">
+                      <Input value={edit?.tipo_conta || ''} onChange={e=>setCampo('tipo_conta', e.target.value)} placeholder="Corrente / Poupança" />
+                    </Field>
+                    <div style={{gridColumn:'span 2'}}>
+                      <Field label="PIX">
+                        <Input value={edit?.pix || ''} onChange={e=>setCampo('pix', e.target.value)} />
+                      </Field>
+                    </div>
                   </div>
+
+                  {/* Aviso se houve edição */}
+                  {houveEdicao && (
+                    <div style={{
+                      marginBottom:16, padding:'10px 14px',
+                      background:'rgba(245, 158, 11, .1)', border:'1px solid rgba(245, 158, 11, .3)',
+                      borderRadius:8, fontSize:12, color:'var(--amber)', display:'flex',
+                      alignItems:'center', justifyContent:'space-between', gap:10
+                    }}>
+                      <span>⚠️ Você fez alterações que ainda não foram salvas.</span>
+                      <div style={{display:'flex',gap:6}}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={()=>setEdit({...detalhe})}
+                          disabled={salvandoEdicoes}
+                          style={{fontSize:11}}
+                        >
+                          Desfazer
+                        </button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={salvarEdicoes}
+                          disabled={salvandoEdicoes}
+                          style={{fontSize:11}}
+                        >
+                          {salvandoEdicoes ? 'Salvando...' : '💾 Salvar alterações'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Checklist de Documentos */}
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Checklist de Documentos</h4>

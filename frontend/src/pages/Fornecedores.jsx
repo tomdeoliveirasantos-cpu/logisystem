@@ -36,11 +36,8 @@ export default function Fornecedores() {
   // Mapa rápido pra exibir label a partir do valor
   const tipoLabel = Object.fromEntries((tipos || []).map(t => [t.valor, t.label]));
 
-  // Opções do select (com placeholder "Selecione...")
-  const tipoOptions = [
-    { value: '', label: 'Selecione...' },
-    ...(tipos || []).map(t => ({ value: t.valor, label: t.label })),
-  ];
+  // Opções do select (o componente Select já injeta o placeholder "Selecione...")
+  const tipoOptions = (tipos || []).map(t => ({ value: t.valor, label: t.label }));
 
   const rows = data || [];
 

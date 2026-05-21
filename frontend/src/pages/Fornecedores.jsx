@@ -1,22 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
 import { Modal, Field, Input, Select, useToast, Toast, ExportBtn } from '../components/UI';
-
-const tipoOptions = [
-  { value: 'mecanica', label: 'Mecânica' },
-  { value: 'pneus', label: 'Pneus' },
-  { value: 'eletrica', label: 'Elétrica' },
-  { value: 'funilaria', label: 'Funilaria / Pintura' },
-  { value: 'seguros', label: 'Seguros' },
-  { value: 'licenciamento', label: 'Licenciamento / Despachante' },
-  { value: 'combustivel', label: 'Combustível' },
-  { value: 'pecas', label: 'Peças / Autopeças' },
-  { value: 'tacografo', label: 'Tacógrafo' },
-  { value: 'outros', label: 'Outros' },
-];
-
-const tipoLabel = Object.fromEntries(tipoOptions.map(t => [t.value, t.label]));
 
 const formatDoc = v => {
   if (!v) return '—';
@@ -33,6 +18,29 @@ export default function Fornecedores() {
   const [form, setForm] = useState({});
   const { toast, showToast } = useToast();
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── Tipos dinâmicos (carregados da API) ──
+  const [tipos, setTipos] = useState([]);
+  const [modalTipo, setModalTipo] = useState(false);
+  const [novoTipoLabel, setNovoTipoLabel] = useState('');
+  const [salvandoTipo, setSalvandoTipo] = useState(false);
+
+  const carregarTipos = async () => {
+    try {
+      const lista = await api.get('/fornecedores/tipos');
+      setTipos(lista || []);
+    } catch (e) { showToast('Erro ao carregar tipos: ' + e.message, 'error'); }
+  };
+  useEffect(() => { carregarTipos(); }, []);
+
+  // Mapa rápido pra exibir label a partir do valor
+  const tipoLabel = Object.fromEntries((tipos || []).map(t => [t.valor, t.label]));
+
+  // Opções do select (com placeholder "Selecione...")
+  const tipoOptions = [
+    { value: '', label: 'Selecione...' },
+    ...(tipos || []).map(t => ({ value: t.valor, label: t.label })),
+  ];
 
   const rows = data || [];
 
@@ -59,6 +67,41 @@ export default function Fornecedores() {
       showToast(r.ativo ? 'Fornecedor inativado' : 'Fornecedor reativado');
       refetch();
     } catch (e) { showToast(e.message, 'error'); }
+  };
+
+  // ── Adicionar novo tipo ──
+  const abrirModalTipo = () => { setNovoTipoLabel(''); setModalTipo(true); };
+
+  const salvarNovoTipo = async () => {
+    const label = (novoTipoLabel || '').trim();
+    if (!label) return showToast('Informe o nome do tipo', 'error');
+    if (salvandoTipo) return;
+    setSalvandoTipo(true);
+    try {
+      const novo = await api.post('/fornecedores/tipos', { label });
+      await carregarTipos();
+      // Já seleciona o novo tipo no formulário em aberto
+      set('tipo', novo.valor);
+      setModalTipo(false);
+      setNovoTipoLabel('');
+      showToast(`Tipo "${novo.label}" adicionado!`);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setSalvandoTipo(false);
+    }
+  };
+
+  // ── Remover tipo ──
+  const removerTipo = async (t) => {
+    if (!confirm(`Remover o tipo "${t.label}"? Essa ação não pode ser desfeita.`)) return;
+    try {
+      await api.delete(`/fornecedores/tipos/${t.id}`);
+      await carregarTipos();
+      showToast(`Tipo "${t.label}" removido.`);
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
   };
 
   const cols = [
@@ -111,6 +154,7 @@ export default function Fornecedores() {
         </table></div></div>
       </div>
 
+      {/* Modal Cadastrar/Editar Fornecedor */}
       {modal && (
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModal(false)}>
           <div className="modal" style={{ maxWidth: 480 }}>
@@ -133,7 +177,20 @@ export default function Fornecedores() {
                 </Field>
                 <div style={{ gridColumn: 'span 2' }}>
                   <Field label="Tipo de Serviço">
-                    <Select value={form.tipo || ''} onChange={e => set('tipo', e.target.value)} options={tipoOptions} />
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                      <div style={{ flex: 1 }}>
+                        <Select value={form.tipo || ''} onChange={e => set('tipo', e.target.value)} options={tipoOptions} />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={abrirModalTipo}
+                        title="Adicionar novo tipo"
+                        style={{ padding: '0 12px', fontSize: 18, fontWeight: 600, color: 'var(--accent)' }}
+                      >
+                        +
+                      </button>
+                    </div>
                   </Field>
                 </div>
               </div>
@@ -145,6 +202,67 @@ export default function Fornecedores() {
           </div>
         </div>
       )}
+
+      {/* Modal Adicionar Novo Tipo */}
+      {modalTipo && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalTipo(false)} style={{ zIndex: 1100 }}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <span className="modal-title">Tipos de Serviço</span>
+              <button className="modal-close" onClick={() => setModalTipo(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <Field label="Novo tipo">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Input
+                    value={novoTipoLabel}
+                    onChange={e => setNovoTipoLabel(e.target.value)}
+                    placeholder="Ex: Lavagem, Sinistro, Treinamento..."
+                    onKeyDown={e => { if (e.key === 'Enter' && !salvandoTipo) salvarNovoTipo(); }}
+                    autoFocus
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={salvarNovoTipo}
+                    disabled={salvandoTipo || !novoTipoLabel.trim()}
+                    style={{ minWidth: 90 }}
+                  >
+                    {salvandoTipo ? '...' : 'Adicionar'}
+                  </button>
+                </div>
+              </Field>
+
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
+                  Tipos cadastrados ({tipos.length})
+                </div>
+                <div style={{ display: 'grid', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
+                  {tipos.map(t => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'var(--bg3)', borderRadius: 6, fontSize: 13 }}>
+                      <span>
+                        {t.label}
+                        {t.is_padrao && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text3)' }}>(padrão)</span>}
+                      </span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => removerTipo(t)}
+                        title="Remover este tipo"
+                        style={{ fontSize: 11, color: 'var(--red)' }}
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModalTipo(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <Toast {...toast} />}
     </div>
   );

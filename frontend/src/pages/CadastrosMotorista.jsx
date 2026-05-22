@@ -571,7 +571,6 @@ export default function CadastrosMotorista() {
                           {value:'',label:'— Selecionar —'},
                           {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
                           {value:'motorista_terceiro',label:'🚚 Motorista Terceiro'},
-                          {value:'carreteiro',label:'🚛 Carreteiro (Carro / Carreta)'},
                           {value:'ajudante',label:'👷 Ajudante'},
                           {value:'administrativo',label:'💼 Administrativo'},
                           {value:'pendente',label:'⏳ Pendente'},

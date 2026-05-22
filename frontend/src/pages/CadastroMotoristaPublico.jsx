@@ -384,7 +384,6 @@ export default function CadastroMotoristaPublico() {
                     <option value="">— Selecione —</option>
                     <option value="motorista_proprio">🏠 Motorista Próprio</option>
                     <option value="motorista_terceiro">🚚 Motorista Terceiro</option>
-                    <option value="carreteiro">🚛 Carreteiro (Carro / Carreta)</option>
                     <option value="ajudante">👷 Ajudante</option>
                     <option value="administrativo">💼 Administrativo</option>
                   </select>

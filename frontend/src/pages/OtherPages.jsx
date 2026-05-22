@@ -638,7 +638,7 @@ export function Veiculos() {
               {/* 3. Tipo */}
               <Field label="Tipo *">
                 <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
-                  options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER'].map(v=>({value:v,label:v}))}/>
+                  options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER','CARRO / CARRETA'].map(v=>({value:v,label:v}))}/>
               </Field>
               <Field label="Modelo">
                 <Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/>
@@ -820,7 +820,6 @@ export function Motoristas() {
             const tipoLabels = {
               motorista_proprio:'🏠 Motorista Próprio',
               motorista_terceiro:'🚚 Motorista Terceiro',
-              carreteiro:'🚛 Carreteiro',
               ajudante:'👷 Ajudante',
               administrativo:'💼 Administrativo',
               pendente:'⏳ Pendente',
@@ -864,7 +863,6 @@ export function Motoristas() {
                       {value:'',label:'— Selecionar —'},
                       {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
                       {value:'motorista_terceiro',label:'🚚 Motorista Terceiro'},
-                      {value:'carreteiro',label:'🚛 Carreteiro (Carro / Carreta)'},
                       {value:'ajudante',label:'👷 Ajudante'},
                       {value:'administrativo',label:'💼 Administrativo'},
                       {value:'pendente',label:'⏳ Pendente (admin classificará)'},

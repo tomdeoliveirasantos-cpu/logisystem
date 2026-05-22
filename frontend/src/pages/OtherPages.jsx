@@ -638,7 +638,7 @@ export function Veiculos() {
               {/* 3. Tipo */}
               <Field label="Tipo *">
                 <Select value={form.tipo||''} onChange={e=>set('tipo',e.target.value)}
-                  options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER','CARRO / CARRETA'].map(v=>({value:v,label:v}))}/>
+                  options={['HR','IVECO','3/4','TOCO','TRUCK','MASTER','SPRINTER','CARRETA'].map(v=>({value:v,label:v}))}/>
               </Field>
               <Field label="Modelo">
                 <Input value={form.modelo||''} onChange={e=>set('modelo',e.target.value)} placeholder="ex: Daily 35S14"/>

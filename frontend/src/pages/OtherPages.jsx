@@ -820,6 +820,7 @@ export function Motoristas() {
             const tipoLabels = {
               motorista_proprio:'🏠 Motorista Próprio',
               motorista_terceiro:'🚚 Motorista Terceiro',
+              carreteiro:'🚛 Carreteiro',
               ajudante:'👷 Ajudante',
               administrativo:'💼 Administrativo',
               pendente:'⏳ Pendente',
@@ -863,6 +864,7 @@ export function Motoristas() {
                       {value:'',label:'— Selecionar —'},
                       {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
                       {value:'motorista_terceiro',label:'🚚 Motorista Terceiro'},
+                      {value:'carreteiro',label:'🚛 Carreteiro (Carro / Carreta)'},
                       {value:'ajudante',label:'👷 Ajudante'},
                       {value:'administrativo',label:'💼 Administrativo'},
                       {value:'pendente',label:'⏳ Pendente (admin classificará)'},

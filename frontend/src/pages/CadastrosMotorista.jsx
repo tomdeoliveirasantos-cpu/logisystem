@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import { api } from '../lib/api';
-import { Modal, Field, Input, StatusBadge, useToast, Toast, ExportBtn } from '../components/UI';
+import { Modal, Field, Input, Select, StatusBadge, useToast, Toast, ExportBtn } from '../components/UI';
 
 const fmtDate = d => {
   if (!d) return '—';
@@ -480,12 +480,61 @@ export default function CadastrosMotorista() {
       {/* ── Modal Detalhe do Cadastro ── */}
       {modalDetalhe && (
         <div className="modal-backdrop" onClick={e=>e.target===e.currentTarget&&(setModalDetalhe(null),setDetalhe(null),setEdit(null))}>
-          <div className="modal" style={{maxWidth:700, maxHeight:'90vh', overflow:'auto'}}>
+          <div className="modal" style={{maxWidth:700, maxHeight:'90vh', display:'flex', flexDirection:'column'}}>
             <div className="modal-header">
               <span className="modal-title">Detalhe do Cadastro</span>
               <button className="modal-close" onClick={()=>{setModalDetalhe(null);setDetalhe(null);setEdit(null);}}>×</button>
             </div>
-            <div className="modal-body">
+
+            {/* Aviso sticky de alterações pendentes — sempre visível */}
+            {houveEdicao && (
+              <div style={{
+                padding:'10px 16px',
+                background:'#fef3c7', borderBottom:'2px solid #f59e0b',
+                fontSize:13, color:'#92400e', display:'flex',
+                alignItems:'center', justifyContent:'space-between', gap:10,
+                flexShrink:0
+              }}>
+                <span style={{fontWeight:600}}>⚠️ Alterações não salvas</span>
+                <div style={{display:'flex',gap:6}}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={()=>setEdit({...detalhe})}
+                    disabled={salvandoEdicoes}
+                    style={{fontSize:12}}
+                  >
+                    Desfazer
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={salvarEdicoes}
+                    disabled={salvandoEdicoes}
+                    style={{fontSize:12, background:'#f59e0b', borderColor:'#f59e0b'}}
+                  >
+                    {salvandoEdicoes ? 'Salvando...' : '💾 Salvar alterações'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div
+              className="modal-body modal-body-scrollable"
+              style={{
+                overflowY: 'auto',
+                flex: 1,
+                // Scrollbar visível e mais grossa pra usuários leigos perceberem
+                scrollbarWidth: 'auto', // Firefox
+                scrollbarColor: '#9ca3af #e5e7eb', // Firefox
+              }}
+            >
+              {/* Estilos da scrollbar webkit (Chrome/Edge/Safari) — inline via style tag escopado */}
+              <style>{`
+                .modal-body-scrollable::-webkit-scrollbar { width: 14px; }
+                .modal-body-scrollable::-webkit-scrollbar-track { background: #f3f4f6; border-radius: 0; }
+                .modal-body-scrollable::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 7px; border: 2px solid #f3f4f6; }
+                .modal-body-scrollable::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+              `}</style>
+
               {loadingDetalhe ? (
                 <div style={{textAlign:'center',padding:40,color:'var(--text3)'}}>Carregando...</div>
               ) : detalhe ? (
@@ -515,7 +564,19 @@ export default function CadastrosMotorista() {
                       <Input value={edit?.email || ''} onChange={e=>setCampo('email', e.target.value)} />
                     </Field>
                     <Field label="Tipo de Colaborador">
-                      <Input value={edit?.tipo_colaborador || ''} onChange={e=>setCampo('tipo_colaborador', e.target.value)} />
+                      <Select
+                        value={edit?.tipo_colaborador || ''}
+                        onChange={e=>setCampo('tipo_colaborador', e.target.value)}
+                        options={[
+                          {value:'',label:'— Selecionar —'},
+                          {value:'motorista_proprio',label:'🏠 Motorista Próprio'},
+                          {value:'motorista_terceiro',label:'🚚 Motorista Terceiro'},
+                          {value:'carreteiro',label:'🚛 Carreteiro (Carro / Carreta)'},
+                          {value:'ajudante',label:'👷 Ajudante'},
+                          {value:'administrativo',label:'💼 Administrativo'},
+                          {value:'pendente',label:'⏳ Pendente'},
+                        ]}
+                      />
                     </Field>
                     <Field label="CNH">
                       <Input value={edit?.cnh_numero || ''} onChange={e=>setCampo('cnh_numero', e.target.value)} />
@@ -627,36 +688,6 @@ export default function CadastrosMotorista() {
                     </div>
                   </div>
 
-                  {/* Aviso se houve edição */}
-                  {houveEdicao && (
-                    <div style={{
-                      marginBottom:16, padding:'10px 14px',
-                      background:'rgba(245, 158, 11, .1)', border:'1px solid rgba(245, 158, 11, .3)',
-                      borderRadius:8, fontSize:12, color:'var(--amber)', display:'flex',
-                      alignItems:'center', justifyContent:'space-between', gap:10
-                    }}>
-                      <span>⚠️ Você fez alterações que ainda não foram salvas.</span>
-                      <div style={{display:'flex',gap:6}}>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={()=>setEdit({...detalhe})}
-                          disabled={salvandoEdicoes}
-                          style={{fontSize:11}}
-                        >
-                          Desfazer
-                        </button>
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={salvarEdicoes}
-                          disabled={salvandoEdicoes}
-                          style={{fontSize:11}}
-                        >
-                          {salvandoEdicoes ? 'Salvando...' : '💾 Salvar alterações'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Checklist de Documentos */}
                   <h4 style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--text1)'}}>Checklist de Documentos</h4>
                   <div style={{display:'grid',gap:8,marginBottom:16}}>
@@ -718,9 +749,27 @@ export default function CadastrosMotorista() {
               ) : null}
             </div>
             {detalhe && detalhe.status === 'pendente' && (
-              <div className="modal-footer" style={{display:'flex',gap:8}}>
-                <button className="btn btn-ghost" onClick={()=>mudarStatus('reprovado')} style={{color:'var(--red)'}}>Reprovar</button>
-                <button className="btn btn-primary" onClick={()=>mudarStatus('aprovado')}>✓ Aprovar Cadastro</button>
+              <div className="modal-footer" style={{display:'flex',gap:8,flexShrink:0}}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    if (houveEdicao && !confirm('Existem alterações não salvas. Deseja reprovar mesmo assim? (as edições serão perdidas)')) return;
+                    mudarStatus('reprovado');
+                  }}
+                  style={{color:'var(--red)'}}
+                >Reprovar</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    if (houveEdicao) {
+                      const op = confirm('Você tem alterações não salvas. Salvar antes de aprovar?');
+                      if (op) {
+                        await salvarEdicoes();
+                      }
+                    }
+                    mudarStatus('aprovado');
+                  }}
+                >✓ Aprovar Cadastro</button>
               </div>
             )}
           </div>

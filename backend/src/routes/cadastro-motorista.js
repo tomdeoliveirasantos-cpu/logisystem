@@ -65,9 +65,14 @@ const docFields = upload.fields([
 ]);
 
 // Storage para upload manual pelo admin (usa req.params.id do cadastro)
+// IMPORTANTE: salva em ../../uploads/admin/<id> (consistente com a URL /uploads/admin/<id>)
+// NÃO usa uploadsDir porque uploadsDir já inclui /motoristas (do fluxo público).
+const adminUploadsDir = path.join(__dirname, '../../uploads/admin');
+if (!fs.existsSync(adminUploadsDir)) fs.mkdirSync(adminUploadsDir, { recursive: true });
+
 const adminStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(uploadsDir, 'admin', String(req.params.id));
+    const dir = path.join(adminUploadsDir, String(req.params.id));
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },

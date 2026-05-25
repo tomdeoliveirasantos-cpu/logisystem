@@ -52,7 +52,7 @@ fs.writeFileSync(LOG, '');
     // 5. Quais orgs o admin@logisystem.com tem vínculo
     s += '\n=== VÍNCULOS DO ADMIN@LOGISYSTEM ===\n';
     const v = await p.query(`
-      SELECT u.email, u.nome, o.nome AS org_nome, uo.perfil_org
+      SELECT u.email, u.nome, o.nome AS org_nome, uo.perfil
         FROM logi_usuarios u
         JOIN logi_usuarios_orgs uo ON uo.usuario_id = u.id
         JOIN logi_organizacoes o ON o.id = uo.organizacao_id

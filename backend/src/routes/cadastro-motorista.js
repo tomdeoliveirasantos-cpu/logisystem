@@ -549,6 +549,59 @@ adminRouter.get('/:id/contrato-pdf', async (req, res, next) => {
 // PATCH /:id/anexar/:campo — Admin anexa manualmente um documento ao cadastro
 //   :campo deve ser um dos: cnh, cnpj_contrato, rntrc, comprovante_endereco
 //   Body: multipart com campo "arquivo"
+// DELETE /:id — Excluir cadastro (apenas se reprovado ou pendente)
+//   Não deixa excluir cadastros aprovados (preserva histórico de aprovações).
+//   Remove também os arquivos físicos do disco.
+adminRouter.delete('/:id', async (req, res, next) => {
+  try {
+    // Verifica que existe e pertence à org
+    const { rows } = await db.query(
+      `SELECT id, status, doc_cnh, doc_cnpj_contrato, doc_rntrc, doc_comprovante_endereco, assinatura_path, convite_id
+         FROM logi_motorista_cadastros
+        WHERE id = $1 AND organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Cadastro não encontrado' });
+
+    const cad = rows[0];
+    if (cad.status === 'aprovado') {
+      return res.status(409).json({
+        error: 'Não é possível excluir cadastros aprovados. Reprove primeiro se necessário.',
+      });
+    }
+
+    // Tenta remover arquivos físicos (best effort, não falha o DELETE)
+    const arquivos = [cad.doc_cnh, cad.doc_cnpj_contrato, cad.doc_rntrc, cad.doc_comprovante_endereco, cad.assinatura_path]
+      .filter(Boolean);
+    for (const url of arquivos) {
+      try {
+        // url está no formato /uploads/admin/<id>/arquivo.pdf ou /uploads/motoristas/<token>/arquivo.pdf
+        const filePath = path.join(__dirname, '../../', url.replace(/^\/+/, ''));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (e) {
+        console.warn(`Não foi possível remover arquivo ${url}: ${e.message}`);
+      }
+    }
+
+    // Deleta o cadastro
+    await db.query(
+      `DELETE FROM logi_motorista_cadastros WHERE id = $1 AND organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
+    );
+
+    // Volta o convite para "pendente" pra a pessoa poder refazer (se ele existir)
+    if (cad.convite_id) {
+      await db.query(
+        `UPDATE logi_cadastro_convites SET status = 'pendente'
+          WHERE id = $1 AND organizacao_id = $2`,
+        [cad.convite_id, req.organizacao_id]
+      ).catch(() => {});
+    }
+
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
 adminRouter.patch('/:id/anexar/:campo', (req, res, next) => {
   adminUpload.single('arquivo')(req, res, (err) => {
     if (err) {

@@ -239,6 +239,20 @@ export default function CadastrosMotorista() {
     } catch(e) { showToast(e.message, 'error'); }
   };
 
+  // Excluir cadastro (apenas reprovado ou pendente)
+  const excluirCadastro = async () => {
+    if (!detalhe) return;
+    const nome = detalhe.nome || 'este cadastro';
+    if (!confirm(`Excluir definitivamente "${nome}"?\n\nEsta ação não pode ser desfeita. Os arquivos anexados também serão removidos. O convite voltará a ficar pendente para a pessoa preencher novamente.`)) return;
+    try {
+      await api.delete(`/motorista-cadastros/${detalhe.id}`);
+      showToast(`Cadastro de "${nome}" excluído.`);
+      setModalDetalhe(null); setDetalhe(null); setEdit(null);
+      refetch();
+      refetchConvites();
+    } catch(e) { showToast(e.message, 'error'); }
+  };
+
   // Download PDF do contrato
   const downloadPDF = async (id, nome) => {
     try {
@@ -281,6 +295,13 @@ export default function CadastrosMotorista() {
           <div className="page-desc">Formulários de cadastro, documentos e contratos</div>
         </div>
         <div style={{display:'flex',gap:8}}>
+          <button
+            className="btn btn-ghost"
+            onClick={() => window.location.assign('/motoristas')}
+            title="Ir para a tela de Colaboradores cadastrados"
+          >
+            ← Colaboradores
+          </button>
           <ExportBtn rows={rows} filename="cadastros_colaboradores" columns={cols.map(c=>({key:c.key,label:c.label}))} />
           <button className="btn btn-primary" onClick={()=>setModalConvite(true)}>+ Gerar Convite</button>
         </div>
@@ -747,28 +768,51 @@ export default function CadastrosMotorista() {
                 </div>
               ) : null}
             </div>
-            {detalhe && detalhe.status === 'pendente' && (
-              <div className="modal-footer" style={{display:'flex',gap:8,flexShrink:0}}>
+            {detalhe && (detalhe.status === 'pendente' || detalhe.status === 'reprovado') && (
+              <div className="modal-footer" style={{display:'flex',gap:8,flexShrink:0,justifyContent:'space-between'}}>
+                {/* Excluir fica à esquerda, separado das ações primárias */}
                 <button
                   className="btn btn-ghost"
-                  onClick={() => {
-                    if (houveEdicao && !confirm('Existem alterações não salvas. Deseja reprovar mesmo assim? (as edições serão perdidas)')) return;
-                    mudarStatus('reprovado');
-                  }}
-                  style={{color:'var(--red)'}}
-                >Reprovar</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={async () => {
-                    if (houveEdicao) {
-                      const op = confirm('Você tem alterações não salvas. Salvar antes de aprovar?');
-                      if (op) {
-                        await salvarEdicoes();
-                      }
-                    }
-                    mudarStatus('aprovado');
-                  }}
-                >✓ Aprovar Cadastro</button>
+                  onClick={excluirCadastro}
+                  style={{color:'var(--red)', fontSize:13}}
+                  title="Excluir definitivamente este cadastro"
+                >
+                  🗑 Excluir cadastro
+                </button>
+
+                {detalhe.status === 'pendente' ? (
+                  <div style={{display:'flex',gap:8}}>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        if (houveEdicao && !confirm('Existem alterações não salvas. Deseja reprovar mesmo assim? (as edições serão perdidas)')) return;
+                        mudarStatus('reprovado');
+                      }}
+                      style={{color:'var(--red)'}}
+                    >Reprovar</button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        if (houveEdicao) {
+                          const op = confirm('Você tem alterações não salvas. Salvar antes de aprovar?');
+                          if (op) {
+                            await salvarEdicoes();
+                          }
+                        }
+                        mudarStatus('aprovado');
+                      }}
+                    >✓ Aprovar Cadastro</button>
+                  </div>
+                ) : (
+                  // status === 'reprovado'
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => mudarStatus('pendente')}
+                    title="Voltar este cadastro para revisão"
+                  >
+                    ↻ Voltar para pendente
+                  </button>
+                )}
               </div>
             )}
           </div>

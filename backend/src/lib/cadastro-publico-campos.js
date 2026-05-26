@@ -37,9 +37,9 @@ const CAMPOS = [
   { chave: 'cidade_pj',        label: 'Cidade PJ',            passo: 1, grupo: 'Endereço PJ',     default: 'obrigatorio' },
 
   // Passo 2: Veículo
-  { chave: 'veiculo_placa',    label: 'Placa',                passo: 2, grupo: 'Veículo', default: 'obrigatorio' },
-  { chave: 'veiculo_modelo',   label: 'Modelo',               passo: 2, grupo: 'Veículo', default: 'obrigatorio' },
-  { chave: 'veiculo_ano',      label: 'Ano',                  passo: 2, grupo: 'Veículo', default: 'obrigatorio' },
+  { chave: 'veiculo_placa',    label: 'Placa',                passo: 2, grupo: 'Veículo', default: 'opcional' },
+  { chave: 'veiculo_modelo',   label: 'Modelo',               passo: 2, grupo: 'Veículo', default: 'opcional' },
+  { chave: 'veiculo_ano',      label: 'Ano',                  passo: 2, grupo: 'Veículo', default: 'opcional' },
   { chave: 'veiculo_rntrc',    label: 'RNTRC (ANTT)',         passo: 2, grupo: 'Veículo', default: 'opcional' },
 
   // Passo 3: Dados Bancários

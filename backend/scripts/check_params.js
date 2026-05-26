@@ -1,29 +1,28 @@
 require('dotenv').config({ path: 'C:\\Desenvolvimento\\logisystem\\backend\\.env' });
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-
+const { Pool } = require('pg'); const fs = require('fs'); const path = require('path');
 const p = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
-const LOG = path.join(__dirname, '..', 'check_params.txt');
+const LOG = path.join(__dirname, '..', 'params.txt');
 fs.writeFileSync(LOG, '');
-
 (async () => {
   try {
     const r = await p.query(
-      `SELECT column_name, data_type FROM information_schema.columns
-       WHERE table_name = 'logi_parametros_cadastro_publico'
-       ORDER BY ordinal_position`
+      `SELECT organizacao_id, parametros, updated_at, updated_by
+         FROM logi_parametros_cadastro_publico
+        WHERE organizacao_id IN ('fcb4f2ec605481cb49c6ee7807db0565','8d15631f97045237b0866eb1efe7d0d7')`
     );
-    let s = 'Tabela logi_parametros_cadastro_publico:\n';
-    if (r.rows.length === 0) {
-      s += '  NÃO EXISTE — precisa de migration!\n';
-    } else {
-      r.rows.forEach(c => s += `  ${c.column_name} (${c.data_type})\n`);
-    }
+    let s = `Total registros: ${r.rows.length}\n\n`;
+    r.rows.forEach(row => {
+      const orgNome = row.organizacao_id.startsWith('fcb4') ? 'Mtrans' : 'Léo';
+      s += `=== ${orgNome} (atualizado em ${row.updated_at?.toISOString?.()||'-'} por ${row.updated_by||'-'}) ===\n`;
+      const params = row.parametros || {};
+      // Filtrar campos de veículo
+      ['veiculo_placa','veiculo_modelo','veiculo_ano','veiculo_rntrc'].forEach(c => {
+        s += `  ${c.padEnd(20)} = ${params[c] || '(não definido, usa default)'}\n`;
+      });
+      // Mostrar TOTAL de campos customizados pra contexto
+      s += `  TOTAL de chaves customizadas: ${Object.keys(params).length}\n`;
+    });
     fs.writeFileSync(LOG, s);
     process.exit(0);
-  } catch (e) {
-    fs.writeFileSync(LOG, 'ERRO: ' + e.message);
-    process.exit(1);
-  }
+  } catch (e) { fs.writeFileSync(LOG, 'ERRO: ' + e.message); process.exit(1); }
 })();

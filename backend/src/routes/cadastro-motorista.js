@@ -346,6 +346,33 @@ adminRouter.post('/convites/gerar', async (req, res, next) => {
   }
 });
 
+// DELETE /convites/:id — Cancelar (excluir) um convite
+//   Bloqueia se já foi preenchido (status = 'preenchido') para preservar o cadastro vinculado.
+//   Para reabrir um cadastro, o admin deve usar DELETE /:id (que apaga o cadastro
+//   e devolve o convite para 'pendente').
+adminRouter.delete('/convites/:id', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, status, nome_motorista FROM logi_cadastro_convites
+        WHERE id = $1 AND organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Convite não encontrado' });
+
+    if (rows[0].status === 'preenchido') {
+      return res.status(409).json({
+        error: 'Este convite já foi preenchido. Para cancelar, exclua o cadastro vinculado (ele devolverá o convite para "pendente" e aí você pode cancelá-lo).',
+      });
+    }
+
+    await db.query(
+      `DELETE FROM logi_cadastro_convites WHERE id = $1 AND organizacao_id = $2`,
+      [req.params.id, req.organizacao_id]
+    );
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
 // GET /:id — Detalhe de um cadastro
 adminRouter.get('/:id', async (req, res, next) => {
   try {

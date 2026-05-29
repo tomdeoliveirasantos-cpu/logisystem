@@ -43,8 +43,18 @@ export default function CadastroMotoristaPublico() {
 
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
-  const isReq    = (chave) => parametros[chave] === 'obrigatorio';
-  const isHidden = (chave) => parametros[chave] === 'oculto';
+  // Campos de motorista (CNH + Veículo) que somem automaticamente quando o tipo
+  // de colaborador é administrativo ou ajudante (não dirigem)
+  const CAMPOS_DE_MOTORISTA = new Set([
+    'cnh_numero','cnh_categoria','cnh_validade',
+    'veiculo_placa','veiculo_modelo','veiculo_ano','veiculo_rntrc',
+  ]);
+  const ehNaoMotorista = ['administrativo','ajudante'].includes(form.tipo_colaborador);
+  const ocultadoPorTipo = (chave) => ehNaoMotorista && CAMPOS_DE_MOTORISTA.has(chave);
+
+  const isHidden = (chave) => parametros[chave] === 'oculto' || ocultadoPorTipo(chave);
+  // Se está oculto por tipo, também não é obrigatório (não dá pra preencher o que não aparece)
+  const isReq    = (chave) => parametros[chave] === 'obrigatorio' && !ocultadoPorTipo(chave);
   const mark     = (label, chave) => isReq(chave) ? `${label} *` : label;
 
   const handleCEP = async (cepValue, prefix) => {

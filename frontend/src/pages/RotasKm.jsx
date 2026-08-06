@@ -122,6 +122,18 @@ export default function RotasKm() {
     a.click();
   }
 
+  const pendentes = rotas.filter((r) => r.status_calculo === 'pendente').length;
+  const semEndereco = rotas.filter((r) => r.status_calculo === 'falha').length;
+
+  // Enquanto houver rotas na fila, atualiza sozinho a cada 10s
+  useEffect(() => {
+    if (!selecao || pendentes === 0) return undefined;
+    const t = setInterval(async () => {
+      try { setRotas(await api.get(`/rotas/importacoes/${selecao.id}/rotas`)); } catch { /* silencioso */ }
+    }, 10000);
+    return () => clearInterval(t);
+  }, [selecao, pendentes]);
+
   const totalPago = rotas.reduce((s, r) => s + (Number(r.valor_pago) || 0), 0);
   const totalKm = rotas.reduce((s, r) => s + (Number(config?.incluir_volta ? r.km_calculado_total : r.km_calculado_ida) || 0), 0);
 
@@ -143,7 +155,7 @@ export default function RotasKm() {
           </div>
           <div className="total-card ok">
             <span className="total-num">{rotas.filter((r) => r.status_calculo === 'ok').length}</span>
-            <span className="total-lbl">calculadas</span>
+            <span className="total-lbl">calculadas{pendentes > 0 ? ` · ${pendentes} na fila` : ''}</span>
           </div>
           <div className="total-card">
             <span className="total-num">{fmtKm(totalKm)}</span>
@@ -205,6 +217,16 @@ export default function RotasKm() {
                   <span>Total KM: <strong>{fmtKm(totalKm)}</strong></span>
                   <span>Total a pagar: <strong>{fmt(totalPago)}</strong></span>
                 </div>
+              )}
+              {pendentes > 0 && (
+                <p className="aviso processando">
+                  Calculando… {pendentes} rota(s) na fila. A tela atualiza sozinha — pode sair e voltar depois.
+                </p>
+              )}
+              {pendentes === 0 && semEndereco > 0 && (
+                <p className="aviso">
+                  {semEndereco} rota(s) sem endereço de entrega na planilha — não é possível calcular o KM delas.
+                </p>
               )}
               <div className="tabela-scroll">
                 <table className="tabela">
@@ -290,6 +312,8 @@ export default function RotasKm() {
         .total-num{font-size:24px;font-weight:800;color:#1a2b5c;line-height:1.1}
         .total-card.valor .total-num{color:#a06a12}
         .total-lbl{font-size:12px;color:#667}
+        .aviso{font-size:12.5px;color:#8a6d3b;background:#fdf8ef;border:1px solid #f0e0c0;border-radius:8px;padding:8px 10px;margin:6px 0}
+        .aviso.processando{color:#1a4f8a;background:#eef4fd;border-color:#cfe0f7}
         .geo-tag{font-size:12px;background:#eef0f6;color:#445;padding:4px 10px;border-radius:999px}
         .tabs{display:flex;gap:4px;border-bottom:1px solid #e2e5ee;margin:12px 0 16px}
         .tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;cursor:pointer;color:#667;font-weight:500}

@@ -218,21 +218,30 @@ router.post('/importacoes/:id/calcular', async (req, res, next) => {
         }
       }
 
-      const kmIda = await geo.rotaOSRM(pontos);
-      const kmTotal = await geo.rotaOSRM([...pontos, { lat: config.cd_lat, lng: config.cd_lng }]);
+      // Sem nenhuma parada localizada sobra só o CD: "CD -> CD" daria 0 km e
+      // pagaria o valor fixo indevidamente. Nesse caso não há rota a calcular.
+      const temParadas = pontos.length >= 2;
+      const kmIda = temParadas ? await geo.rotaOSRM(pontos) : null;
+      const kmTotal = temParadas
+        ? await geo.rotaOSRM([...pontos, { lat: config.cd_lat, lng: config.cd_lng }])
+        : null;
 
       const vm = valorPorModelo[String(r.modelo || '').toUpperCase()] || null;
       const kmParaPagar = config.incluir_volta ? kmTotal : kmIda;
-      const valorPago = vm && kmParaPagar != null
+      const valorPago = vm && kmParaPagar != null && kmParaPagar > 0
         ? Math.round((Number(vm.valor_fixo) + kmParaPagar * Number(vm.valor_km)) * 100) / 100
         : null;
+
+      const obs = !temParadas
+        ? 'Sem endereço de entrega na planilha'
+        : (falhas ? `${falhas} endereço(s) não localizados` : null);
 
       await db.query(
         `UPDATE logi_rotas SET km_calculado_ida=$1, km_calculado_total=$2, valor_km=$3, valor_fixo=$4,
                 valor_pago=$5, status_calculo=$6, obs=$7 WHERE id=$8`,
         [kmIda, kmTotal, vm ? vm.valor_km : null, vm ? vm.valor_fixo : null, valorPago,
          (kmIda != null && falhas === 0) ? 'ok' : (kmIda != null ? 'parcial' : 'falha'),
-         falhas ? `${falhas} endereço(s) não localizados` : null, r.id]
+         obs, r.id]
       );
       processadas += 1;
       if (falhas || kmIda == null) comFalha += 1;

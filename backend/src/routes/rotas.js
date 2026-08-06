@@ -236,6 +236,7 @@ router.post('/importacoes/:id/calcular', async (req, res, next) => {
       );
       processadas += 1;
       if (falhas || kmIda == null) comFalha += 1;
+      await geo.sleep(250); // respiro para não estourar o rate limit do OSRM público
     }
     res.json({ processadas, com_falha: comFalha, geocoder: geo.temGoogle() ? 'google' : 'nominatim' });
   } catch (err) { next(err); }

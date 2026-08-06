@@ -86,17 +86,25 @@ async function geocode(enderecoBruto) {
   return res;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // Distância real por ruas entre pontos [{lat,lng}], em km, via OSRM.
-async function rotaOSRM(pontos) {
+// Com retry: o OSRM público limita rajadas, então tentamos algumas vezes.
+async function rotaOSRM(pontos, tentativas = 3) {
   const validos = pontos.filter((p) => p && p.lat != null && p.lng != null);
   if (validos.length < 2) return null;
   const coords = validos.map((p) => `${p.lng},${p.lat}`).join(';');
   const url = `http://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
-  const r = await httpJson(url, { client: http });
-  if (r.code === 'Ok' && r.routes && r.routes[0]) {
-    return Math.round((r.routes[0].distance / 1000) * 100) / 100;
+  for (let t = 0; t < tentativas; t++) {
+    try {
+      const r = await httpJson(url, { client: http });
+      if (r.code === 'Ok' && r.routes && r.routes[0]) {
+        return Math.round((r.routes[0].distance / 1000) * 100) / 100;
+      }
+    } catch (e) { /* retry */ }
+    await sleep(400 * (t + 1));
   }
   return null;
 }
 
-module.exports = { geocode, rotaOSRM, normalizar, temGoogle: () => !!GOOGLE_KEY };
+module.exports = { geocode, rotaOSRM, normalizar, sleep, temGoogle: () => !!GOOGLE_KEY };

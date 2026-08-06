@@ -36,10 +36,19 @@ export default function RotasKm() {
   }, []);
 
   const carregarImportacoes = useCallback(async () => {
-    try { setImportacoes(await api.get('/rotas/importacoes')); } catch (e) { showToast(e.message); }
-  }, []);
+    try {
+      const lista = await api.get('/rotas/importacoes');
+      setImportacoes(lista);
+      // Abre automaticamente a importação mais recente — resultado direto na tela
+      if (lista.length && !selecao) {
+        const recente = lista[0];
+        setSelecao(recente);
+        setRotas(await api.get(`/rotas/importacoes/${recente.id}/rotas`));
+      }
+    } catch (e) { showToast(e.message); }
+  }, [selecao]);
 
-  useEffect(() => { carregarConfig(); carregarImportacoes(); }, [carregarConfig, carregarImportacoes]);
+  useEffect(() => { carregarConfig(); carregarImportacoes(); }, [carregarConfig]);
 
   async function abrirImportacao(imp) {
     setSelecao(imp);
@@ -125,6 +134,27 @@ export default function RotasKm() {
           {geocoder === 'google' ? '📍 Google Maps' : '📍 OpenStreetMap (grátis)'}
         </span>
       </div>
+
+      {rotas.length > 0 && (
+        <div className="totais-destaque">
+          <div className="total-card">
+            <span className="total-num">{rotas.length}</span>
+            <span className="total-lbl">rotas na planilha</span>
+          </div>
+          <div className="total-card ok">
+            <span className="total-num">{rotas.filter((r) => r.status_calculo === 'ok').length}</span>
+            <span className="total-lbl">calculadas</span>
+          </div>
+          <div className="total-card">
+            <span className="total-num">{fmtKm(totalKm)}</span>
+            <span className="total-lbl">KM total {config?.incluir_volta ? '(ida+volta)' : '(só ida)'}</span>
+          </div>
+          <div className="total-card valor">
+            <span className="total-num">{fmt(totalPago)}</span>
+            <span className="total-lbl">total a pagar</span>
+          </div>
+        </div>
+      )}
 
       <div className="tabs">
         {[['importacoes', 'Importações'], ['config', 'Configuração']].map(([id, lbl]) => (
@@ -252,6 +282,14 @@ export default function RotasKm() {
 
       <style>{`
         .page-head{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap}
+        .totais-destaque{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 4px}
+        @media(max-width:640px){.totais-destaque{grid-template-columns:repeat(2,1fr)}}
+        .total-card{background:#fff;border:1px solid #e2e5ee;border-radius:12px;padding:14px 16px;display:grid;gap:2px}
+        .total-card.ok{border-color:#b6e2c8;background:#f3fbf6}
+        .total-card.valor{border-color:#c9942e;background:#fdf8ef}
+        .total-num{font-size:24px;font-weight:800;color:#1a2b5c;line-height:1.1}
+        .total-card.valor .total-num{color:#a06a12}
+        .total-lbl{font-size:12px;color:#667}
         .geo-tag{font-size:12px;background:#eef0f6;color:#445;padding:4px 10px;border-radius:999px}
         .tabs{display:flex;gap:4px;border-bottom:1px solid #e2e5ee;margin:12px 0 16px}
         .tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;cursor:pointer;color:#667;font-weight:500}

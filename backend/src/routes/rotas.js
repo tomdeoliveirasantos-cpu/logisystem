@@ -1,0 +1,244 @@
+const express = require('express');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const db = require('../db');
+const geo = require('../lib/geo');
+
+const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+// Colunas esperadas na aba analítica da planilha ROUTEASY
+const COL = {
+  data: ['DATA'], rota: ['ROTA'], pedido: ['PEDIDO'], seq: ['SEQ.', 'SEQ', 'SEQUENCIA'],
+  cliente: ['CLIENTE'], km: ['KM'], endereco: ['ENDEREÇO', 'ENDERECO'],
+  regiao: ['REGIÃO', 'REGIAO'], motorista: ['MOTORISTA'], placa: ['PLACA'], modelo: ['MODELO'],
+};
+function acharCol(headers, nomes) {
+  for (const n of nomes) {
+    const i = headers.findIndex((h) => String(h || '').trim().toUpperCase() === n.toUpperCase());
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/* -------- Config (CD e política) -------- */
+router.get('/config', async (req, res, next) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM logi_rotas_config WHERE organizacao_id = $1', [req.organizacao_id]);
+    const tab = await db.query('SELECT * FROM logi_rotas_tabela_valor WHERE organizacao_id = $1 ORDER BY modelo', [req.organizacao_id]);
+    res.json({ config: rows[0] || null, tabela: tab.rows, geocoder: geo.temGoogle() ? 'google' : 'nominatim' });
+  } catch (err) { next(err); }
+});
+
+router.put('/config', async (req, res, next) => {
+  try {
+    const { cd_endereco, incluir_volta } = req.body;
+    let lat = null; let lng = null;
+    if (cd_endereco) {
+      const g = await geo.geocode(cd_endereco);
+      if (!g.erro) { lat = g.lat; lng = g.lng; }
+    }
+    const { rows } = await db.query(
+      `INSERT INTO logi_rotas_config (organizacao_id, cd_endereco, cd_lat, cd_lng, incluir_volta)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (organizacao_id) DO UPDATE SET cd_endereco=$2, cd_lat=$3, cd_lng=$4, incluir_volta=$5
+       RETURNING *`,
+      [req.organizacao_id, cd_endereco || null, lat, lng, incluir_volta !== false]
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+/* -------- Tabela de valores por modelo -------- */
+router.put('/tabela', async (req, res, next) => {
+  try {
+    const { itens } = req.body; // [{modelo, valor_km, valor_fixo}]
+    if (!Array.isArray(itens)) return res.status(400).json({ error: 'itens inválido' });
+    for (const it of itens) {
+      if (!it.modelo) continue;
+      await db.query(
+        `INSERT INTO logi_rotas_tabela_valor (organizacao_id, modelo, valor_km, valor_fixo)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (organizacao_id, modelo) DO UPDATE SET valor_km=$3, valor_fixo=$4`,
+        [req.organizacao_id, it.modelo, Number(it.valor_km) || 0, Number(it.valor_fixo) || 0]
+      );
+    }
+    const { rows } = await db.query('SELECT * FROM logi_rotas_tabela_valor WHERE organizacao_id = $1 ORDER BY modelo', [req.organizacao_id]);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+/* -------- Importar planilha -------- */
+router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Envie a planilha' });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    // aba analítica: a que tem ENDEREÇO e ROTA por linha
+    let aba = wb.SheetNames.find((n) => /anal[ií]tico|routeasy/i.test(n));
+    if (!aba) aba = wb.SheetNames[0];
+    const linhas = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null });
+    if (!linhas.length) return res.status(400).json({ error: 'Planilha vazia' });
+
+    const headers = linhas[0];
+    const idx = {};
+    for (const [k, nomes] of Object.entries(COL)) idx[k] = acharCol(headers, nomes);
+    if (idx.rota < 0 || idx.endereco < 0) {
+      return res.status(400).json({ error: 'Planilha sem colunas ROTA/ENDEREÇO reconhecíveis' });
+    }
+
+    // agrupa por (data, rota)
+    const grupos = new Map();
+    for (let i = 1; i < linhas.length; i++) {
+      const row = linhas[i];
+      const rota = row[idx.rota];
+      if (!rota) continue;
+      const dataVal = idx.data >= 0 ? row[idx.data] : null;
+      const chave = `${dataVal}||${rota}`;
+      if (!grupos.has(chave)) {
+        grupos.set(chave, {
+          data: dataVal, rota,
+          motorista: idx.motorista >= 0 ? row[idx.motorista] : null,
+          placa: idx.placa >= 0 ? row[idx.placa] : null,
+          modelo: idx.modelo >= 0 ? row[idx.modelo] : null,
+          regiao: idx.regiao >= 0 ? row[idx.regiao] : null,
+          km_planilha: idx.km >= 0 ? row[idx.km] : null,
+          paradas: [],
+        });
+      }
+      grupos.get(chave).paradas.push({
+        seq: idx.seq >= 0 ? row[idx.seq] : grupos.get(chave).paradas.length + 1,
+        endereco: row[idx.endereco],
+        cliente: idx.cliente >= 0 ? row[idx.cliente] : null,
+        pedido: idx.pedido >= 0 ? row[idx.pedido] : null,
+      });
+    }
+
+    const imp = await db.query(
+      `INSERT INTO logi_rotas_importacoes (organizacao_id, arquivo_nome, total_rotas, total_paradas, criado_por)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [req.organizacao_id, req.file.originalname,
+       grupos.size, [...grupos.values()].reduce((s, g) => s + g.paradas.length, 0),
+       req.usuario?.nome || req.usuario?.email || null]
+    );
+    const importacaoId = imp.rows[0].id;
+
+    function parseData(v) {
+      if (!v) return null;
+      if (typeof v === 'number') { const d = XLSX.SSF.parse_date_code(v); return d ? `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}` : null; }
+      const s = String(v);
+      const m = s.match(/(\d{4})-(\d{2})-(\d{2})/) || s.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m) return m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3]}-${m[2]}-${m[1]}`;
+      return null;
+    }
+    function numBR(v) {
+      if (v == null || v === '') return null;
+      if (typeof v === 'number') return v;
+      const n = parseFloat(String(v).replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.'));
+      return Number.isFinite(n) ? n : null;
+    }
+
+    for (const g of grupos.values()) {
+      const rota = await db.query(
+        `INSERT INTO logi_rotas
+           (organizacao_id, importacao_id, data_rota, rota_codigo, motorista, placa, modelo, regiao, qtd_paradas, km_planilha)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+        [req.organizacao_id, importacaoId, parseData(g.data), String(g.rota),
+         g.motorista, g.placa, g.modelo, g.regiao, g.paradas.length, numBR(g.km_planilha)]
+      );
+      const rotaId = rota.rows[0].id;
+      g.paradas.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+      for (const p of g.paradas) {
+        await db.query(
+          `INSERT INTO logi_rotas_paradas (rota_id, seq, endereco, cliente, pedido)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [rotaId, Number(p.seq) || null, p.endereco, p.cliente, p.pedido ? String(p.pedido) : null]
+        );
+      }
+    }
+
+    res.status(201).json({ importacao_id: importacaoId, rotas: grupos.size });
+  } catch (err) { next(err); }
+});
+
+/* -------- Listar importações e rotas -------- */
+router.get('/importacoes', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT i.*,
+              (SELECT COUNT(*) FROM logi_rotas r WHERE r.importacao_id = i.id AND r.status_calculo = 'ok')::int AS calculadas
+         FROM logi_rotas_importacoes i
+        WHERE i.organizacao_id = $1 ORDER BY i.created_at DESC LIMIT 50`,
+      [req.organizacao_id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.get('/importacoes/:id/rotas', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT * FROM logi_rotas WHERE organizacao_id = $1 AND importacao_id = $2 ORDER BY data_rota, rota_codigo`,
+      [req.organizacao_id, req.params.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+/* -------- Calcular KM de uma importação -------- */
+router.post('/importacoes/:id/calcular', async (req, res, next) => {
+  try {
+    const cfg = await db.query('SELECT * FROM logi_rotas_config WHERE organizacao_id = $1', [req.organizacao_id]);
+    const config = cfg.rows[0];
+    if (!config || config.cd_lat == null) {
+      return res.status(400).json({ error: 'Configure o endereço do CD antes de calcular (aba Configuração).' });
+    }
+    const tab = await db.query('SELECT modelo, valor_km, valor_fixo FROM logi_rotas_tabela_valor WHERE organizacao_id = $1 AND ativo', [req.organizacao_id]);
+    const valorPorModelo = {};
+    tab.rows.forEach((t) => { valorPorModelo[String(t.modelo).toUpperCase()] = t; });
+
+    const rotas = await db.query(
+      `SELECT id, modelo FROM logi_rotas WHERE organizacao_id = $1 AND importacao_id = $2 AND status_calculo <> 'ok'`,
+      [req.organizacao_id, req.params.id]
+    );
+
+    let processadas = 0; let comFalha = 0;
+    for (const r of rotas.rows) {
+      const paradas = await db.query('SELECT * FROM logi_rotas_paradas WHERE rota_id = $1 ORDER BY seq', [r.id]);
+      const pontos = [{ lat: config.cd_lat, lng: config.cd_lng }];
+      let falhas = 0;
+      for (const p of paradas.rows) {
+        if (p.lat == null) {
+          const g = await geo.geocode(p.endereco);
+          if (!g.erro) {
+            await db.query('UPDATE logi_rotas_paradas SET lat=$1, lng=$2, geo_ok=true WHERE id=$3', [g.lat, g.lng, p.id]);
+            pontos.push({ lat: g.lat, lng: g.lng });
+          } else { falhas += 1; }
+        } else {
+          pontos.push({ lat: p.lat, lng: p.lng });
+        }
+      }
+
+      const kmIda = await geo.rotaOSRM(pontos);
+      const kmTotal = await geo.rotaOSRM([...pontos, { lat: config.cd_lat, lng: config.cd_lng }]);
+
+      const vm = valorPorModelo[String(r.modelo || '').toUpperCase()] || null;
+      const kmParaPagar = config.incluir_volta ? kmTotal : kmIda;
+      const valorPago = vm && kmParaPagar != null
+        ? Math.round((Number(vm.valor_fixo) + kmParaPagar * Number(vm.valor_km)) * 100) / 100
+        : null;
+
+      await db.query(
+        `UPDATE logi_rotas SET km_calculado_ida=$1, km_calculado_total=$2, valor_km=$3, valor_fixo=$4,
+                valor_pago=$5, status_calculo=$6, obs=$7 WHERE id=$8`,
+        [kmIda, kmTotal, vm ? vm.valor_km : null, vm ? vm.valor_fixo : null, valorPago,
+         (kmIda != null && falhas === 0) ? 'ok' : (kmIda != null ? 'parcial' : 'falha'),
+         falhas ? `${falhas} endereço(s) não localizados` : null, r.id]
+      );
+      processadas += 1;
+      if (falhas || kmIda == null) comFalha += 1;
+    }
+    res.json({ processadas, com_falha: comFalha, geocoder: geo.temGoogle() ? 'google' : 'nominatim' });
+  } catch (err) { next(err); }
+});
+
+module.exports = router;

@@ -28,6 +28,7 @@ const ajudantesRouter       = require('./routes/ajudantes');
 const motoristaAppRouter    = require('./routes/motorista-app');
 const { publicRouter: cadastroPublicRouter, adminRouter: cadastroAdminRouter } = require('./routes/cadastro-motorista');
 const cadastroPublicoParamsRouter = require('./routes/cadastro-publico-params');
+const rotasRouter = require('./routes/rotas');
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.use('/api/fornecedores',    authMiddleware, requireTenant, tenantContextMidd
 app.use('/api/ajudantes',       authMiddleware, requireTenant, tenantContextMiddleware, ajudantesRouter);
 app.use('/api/multas',          authMiddleware, requireTenant, tenantContextMiddleware, multasRouter);
 app.use('/api/financeiro',      authMiddleware, requireTenant, tenantContextMiddleware, financeiroRouter);
+app.use('/api/rotas',           authMiddleware, requireTenant, tenantContextMiddleware, rotasRouter);
 app.use('/api/relatorios',      authMiddleware, requireTenant, tenantContextMiddleware, relatoriosRouter);
 app.use('/api/parametros',      authMiddleware, parametrosRouter); // parametros é global (sem tenant)
 app.use('/api/reajustes',       authMiddleware, requireTenant, tenantContextMiddleware, reajustesRouter);

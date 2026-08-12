@@ -43,7 +43,7 @@ echo.
 echo --- [2/4] Webhook como tarefa do sistema (SYSTEM, elevado, no boot) ---
 schtasks /Delete /TN "WsDevSoft-Webhook" /F >nul 2>&1
 schtasks /Create /TN "WsDevSoft-Webhook" /RU SYSTEM /RL HIGHEST /SC ONSTART /DELAY 0000:30 ^
-  /TR "\"%NODE%\" \"%WEBHOOK_DIR%\server.js\"" /F
+  /TR "\"%REPO%\infra\start-webhook.bat\"" /F
 if %errorlevel% neq 0 (echo [ERRO] Falha ao criar a tarefa do webhook & pause & exit /b 1)
 schtasks /Run /TN "WsDevSoft-Webhook" >nul 2>&1
 echo     ok - webhook agora roda fora do PM2 e com privilegio de admin
@@ -67,10 +67,7 @@ echo     ok
 echo.
 echo === Instalacao concluida ===
 echo.
-echo Tarefas criadas:
-schtasks /Query /TN "WsDevSoft-Webhook"  /FO LIST ^| findstr /C:"Nome da tarefa" /C:"Status" /C:"TaskName" /C:"Status"
-schtasks /Query /TN "WsDevSoft-PM2"      /FO LIST ^| findstr /C:"Nome da tarefa" /C:"Status" /C:"TaskName" /C:"Status"
-schtasks /Query /TN "WsDevSoft-Watchdog" /FO LIST ^| findstr /C:"Nome da tarefa" /C:"Status" /C:"TaskName" /C:"Status"
+echo Tarefas criadas: WsDevSoft-Webhook, WsDevSoft-PM2, WsDevSoft-Watchdog
 echo.
 echo Log do watchdog: %LOGDIR%\watchdog.log
 echo.

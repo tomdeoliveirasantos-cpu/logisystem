@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useToast, Toast } from '../components/UI';
+import MapaRota from '../components/MapaRota';
 
 const fmt = (v) => (v !== null && v !== undefined
   ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : '—');
@@ -25,6 +26,11 @@ export default function RotasKm() {
   const [rotas, setRotas] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [calculando, setCalculando] = useState(false);
+  const [mapaRotaId, setMapaRotaId] = useState(null);
+  const hoje = new Date().toISOString().substring(0, 10);
+  const [dataRef, setDataRef] = useState(hoje);
+  const [corteIni, setCorteIni] = useState('');
+  const [corteFim, setCorteFim] = useState('');
 
   const carregarConfig = useCallback(async () => {
     try {
@@ -58,14 +64,37 @@ export default function RotasKm() {
   async function enviarPlanilha(e) {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
+    if (!dataRef) { showToast('Informe a data de referência da planilha'); e.target.value = ''; return; }
+    await subirArquivo(arquivo, false);
+    e.target.value = '';
+  }
+
+  async function subirArquivo(arquivo, substituir) {
     setEnviando(true);
     try {
       const fd = new FormData();
       fd.append('arquivo', arquivo);
+      fd.append('data_referencia', dataRef);
+      if (corteIni) fd.append('data_corte_ini', corteIni);
+      if (corteFim) fd.append('data_corte_fim', corteFim);
+      if (substituir) fd.append('substituir', 'true');
       const r = await api.post('/rotas/importar', fd);
-      showToast(`Planilha importada: ${r.rotas} rotas`);
+      showToast(`Planilha importada: ${r.rotas} rotas${r.ignoradas ? ` · ${r.ignoradas} linha(s) fora do período` : ''}`);
+      setSelecao(null);
       await carregarImportacoes();
-    } catch (err) { showToast(err.message); } finally { setEnviando(false); e.target.value = ''; }
+    } catch (err) {
+      // já existe importação para essa data de referência
+      const msg = String(err.message || '');
+      if (msg.includes('ja_importado') || msg.includes('Já existe uma importação')) {
+        const ok = window.confirm(
+          `${msg}\n\nDeseja SUBSTITUIR a importação dessa data? A anterior será apagada.`
+        );
+        if (ok) { await subirArquivo(arquivo, true); return; }
+        showToast('Importação cancelada — escolha outra data de referência');
+      } else {
+        showToast(msg);
+      }
+    } finally { setEnviando(false); }
   }
 
   async function calcular(imp) {
@@ -140,6 +169,7 @@ export default function RotasKm() {
   return (
     <div className="page">
       {toast && <Toast msg={toast} />}
+      {mapaRotaId && <MapaRota rotaId={mapaRotaId} onFechar={() => setMapaRotaId(null)} />}
       <div className="page-head">
         <h1>Rotas &amp; KM</h1>
         <span className="geo-tag" title="Geocodificador ativo">
@@ -177,13 +207,32 @@ export default function RotasKm() {
       {aba === 'importacoes' && (
         <>
           <div className="card upload-card">
-            <div>
+            <div className="upload-txt">
               <strong>Importar planilha de entregas</strong>
-              <p className="muted">Envie o arquivo .xlsx (aba "Dados Analíticos - ROUTEASY"). Agrupamos por rota e calculamos o KM real.</p>
+              <p className="muted">Arquivo .xlsx (aba "Dados Analíticos - ROUTEASY"). Agrupamos por rota e calculamos o KM real.</p>
             </div>
-            <label className="btn btn-primary">
+
+            <div className="upload-datas">
+              <label className="field-inline obrigatorio">
+                <span>Data de referência *</span>
+                <input type="date" value={dataRef} onChange={(ev) => setDataRef(ev.target.value)} />
+                <small>Identifica a que dia/período a planilha se refere</small>
+              </label>
+              <label className="field-inline">
+                <span>Considerar de</span>
+                <input type="date" value={corteIni} onChange={(ev) => setCorteIni(ev.target.value)} />
+                <small>Opcional — ignora linhas anteriores</small>
+              </label>
+              <label className="field-inline">
+                <span>até</span>
+                <input type="date" value={corteFim} onChange={(ev) => setCorteFim(ev.target.value)} />
+                <small>Opcional — ignora linhas posteriores</small>
+              </label>
+            </div>
+
+            <label className={`btn btn-primary ${!dataRef ? 'btn-off' : ''}`}>
               {enviando ? 'Enviando…' : 'Escolher planilha'}
-              <input type="file" accept=".xlsx,.xls" hidden onChange={enviarPlanilha} disabled={enviando} />
+              <input type="file" accept=".xlsx,.xls" hidden onChange={enviarPlanilha} disabled={enviando || !dataRef} />
             </label>
           </div>
 
@@ -195,8 +244,13 @@ export default function RotasKm() {
                 {importacoes.map((imp) => (
                   <li key={imp.id} className={selecao?.id === imp.id ? 'sel' : ''} onClick={() => abrirImportacao(imp)}>
                     <div>
-                      <strong>{imp.arquivo_nome || `Importação #${imp.id}`}</strong>
+                      <strong>
+                        {imp.data_referencia
+                          ? String(imp.data_referencia).substring(0, 10).split('-').reverse().join('/')
+                          : (imp.arquivo_nome || `Importação #${imp.id}`)}
+                      </strong>
                       <span className="muted">{imp.total_rotas} rotas · {imp.total_paradas} paradas · {imp.calculadas} calculadas</span>
+                      {imp.data_referencia && <span className="muted mini-arq">{imp.arquivo_nome}</span>}
                     </div>
                     <button className="btn btn-sm" disabled={calculando}
                       onClick={(e) => { e.stopPropagation(); calcular(imp); }}>
@@ -231,7 +285,7 @@ export default function RotasKm() {
               <div className="tabela-scroll">
                 <table className="tabela">
                   <thead>
-                    <tr><th>Data</th><th>Rota</th><th>Motorista</th><th>Modelo</th><th>Par.</th><th>KM ida</th><th>KM +volta</th><th>Valor</th><th>Status</th></tr>
+                    <tr><th>Data</th><th>Rota</th><th>Motorista</th><th>Modelo</th><th>Par.</th><th>KM ida</th><th>KM +volta</th><th>Valor</th><th>Status</th><th>Mapa</th></tr>
                   </thead>
                   <tbody>
                     {rotas.map((r) => {
@@ -247,10 +301,16 @@ export default function RotasKm() {
                           <td>{fmtKm(r.km_calculado_total)}</td>
                           <td>{fmt(r.valor_pago)}</td>
                           <td><span className="badge" style={{ color: b.cor, background: b.bg }}>{b.txt}</span></td>
+                          <td>
+                            {r.km_calculado_ida != null && (
+                              <button className="btn-mapa" title="Ver no mapa o trajeto contado"
+                                onClick={() => setMapaRotaId(r.id)}>🗺️</button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
-                    {!rotas.length && selecao && <tr><td colSpan={9} className="muted center">Sem rotas nesta importação.</td></tr>}
+                    {!rotas.length && selecao && <tr><td colSpan={10} className="muted center">Sem rotas nesta importação.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -318,7 +378,18 @@ export default function RotasKm() {
         .tabs{display:flex;gap:4px;border-bottom:1px solid #e2e5ee;margin:12px 0 16px}
         .tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;cursor:pointer;color:#667;font-weight:500}
         .tab.active{color:#1a2b5c;border-bottom-color:#c9942e;font-weight:700}
-        .upload-card{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+        .upload-card{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+        .upload-txt{flex:1 1 240px}
+        .upload-datas{display:flex;gap:10px;flex-wrap:wrap}
+        .field-inline{display:grid;gap:3px}
+        .field-inline span{font-size:12px;color:#667;font-weight:600}
+        .field-inline small{font-size:10.5px;color:#99a}
+        .field-inline input{border:1px solid #d5d9e6;border-radius:6px;padding:7px 9px;font:inherit;font-size:13px}
+        .field-inline.obrigatorio input{border-color:#c9942e}
+        .btn-off{opacity:.5;pointer-events:none}
+        .mini-arq{font-size:10.5px;opacity:.75}
+        .btn-mapa{background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;border-radius:6px}
+        .btn-mapa:hover{background:#eef0f6}
         .split{display:grid;grid-template-columns:minmax(280px,380px) 1fr;gap:12px}
         @media(max-width:880px){.split{grid-template-columns:1fr}}
         .lista-imp{list-style:none;margin:0;padding:0;display:grid;gap:6px}

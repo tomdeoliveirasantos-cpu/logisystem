@@ -107,4 +107,27 @@ async function rotaOSRM(pontos, tentativas = 3) {
   return null;
 }
 
-module.exports = { geocode, rotaOSRM, normalizar, sleep, temGoogle: () => !!GOOGLE_KEY };
+// Igual ao rotaOSRM, mas devolve tambem o tracado (GeoJSON) para desenhar no mapa.
+async function rotaOSRMComTracado(pontos, tentativas = 2) {
+  const validos = pontos.filter((p) => p && p.lat != null && p.lng != null);
+  if (validos.length < 2) return null;
+  const coords = validos.map((p) => `${p.lng},${p.lat}`).join(';');
+  const url = `http://router.project-osrm.org/route/v1/driving/${coords}`
+    + '?overview=full&geometries=geojson';
+  for (let t = 0; t < tentativas; t++) {
+    try {
+      const r = await httpJson(url, { client: http });
+      if (r.code === 'Ok' && r.routes && r.routes[0]) {
+        return {
+          km: Math.round((r.routes[0].distance / 1000) * 100) / 100,
+          minutos: Math.round(r.routes[0].duration / 60),
+          tracado: r.routes[0].geometry, // { type:'LineString', coordinates:[[lng,lat],...] }
+        };
+      }
+    } catch (e) { /* retry */ }
+    await sleep(400 * (t + 1));
+  }
+  return null;
+}
+
+module.exports = { geocode, rotaOSRM, rotaOSRMComTracado, normalizar, sleep, temGoogle: () => !!GOOGLE_KEY };

@@ -72,6 +72,34 @@ router.put('/tabela', async (req, res, next) => {
 router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Envie a planilha' });
+
+    // Data de referência identifica a que período a planilha se refere.
+    // Obrigatória para não misturar/sobrescrever importações de dias diferentes.
+    const dataRef = (req.body.data_referencia || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) {
+      return res.status(400).json({ error: 'Informe a data de referência da planilha' });
+    }
+    const corteIni = /^\d{4}-\d{2}-\d{2}$/.test(req.body.data_corte_ini || '') ? req.body.data_corte_ini : null;
+    const corteFim = /^\d{4}-\d{2}-\d{2}$/.test(req.body.data_corte_fim || '') ? req.body.data_corte_fim : null;
+    const substituir = String(req.body.substituir) === 'true';
+
+    // Já existe importação para essa data de referência?
+    const jaTem = await db.query(
+      'SELECT id, arquivo_nome, total_rotas FROM logi_rotas_importacoes WHERE organizacao_id = $1 AND data_referencia = $2',
+      [req.organizacao_id, dataRef]
+    );
+    if (jaTem.rows[0] && !substituir) {
+      return res.status(409).json({
+        error: 'ja_importado',
+        mensagem: `Já existe uma importação para ${dataRef.split('-').reverse().join('/')} `
+          + `("${jaTem.rows[0].arquivo_nome}", ${jaTem.rows[0].total_rotas} rotas).`,
+        importacao_id: jaTem.rows[0].id,
+      });
+    }
+    if (jaTem.rows[0] && substituir) {
+      // remove a anterior (cascade apaga rotas e paradas)
+      await db.query('DELETE FROM logi_rotas_importacoes WHERE id = $1', [jaTem.rows[0].id]);
+    }
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
     // aba analítica: a que tem ENDEREÇO e ROTA por linha
     let aba = wb.SheetNames.find((n) => /anal[ií]tico|routeasy/i.test(n));
@@ -86,13 +114,32 @@ router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
       return res.status(400).json({ error: 'Planilha sem colunas ROTA/ENDEREÇO reconhecíveis' });
     }
 
+    function parseDataAux(v) {
+      if (!v) return null;
+      if (typeof v === 'number') {
+        const d = XLSX.SSF.parse_date_code(v);
+        return d ? `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}` : null;
+      }
+      const s2 = String(v);
+      const m = s2.match(/(\d{4})-(\d{2})-(\d{2})/) || s2.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (!m) return null;
+      return m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3]}-${m[2]}-${m[1]}`;
+    }
+
     // agrupa por (data, rota)
     const grupos = new Map();
+    let ignoradas = 0;
     for (let i = 1; i < linhas.length; i++) {
       const row = linhas[i];
       const rota = row[idx.rota];
       if (!rota) continue;
       const dataVal = idx.data >= 0 ? row[idx.data] : null;
+
+      // Corte por período: linhas fora da janela não entram
+      if (corteIni || corteFim) {
+        const d = parseDataAux(dataVal);
+        if (!d || (corteIni && d < corteIni) || (corteFim && d > corteFim)) { ignoradas += 1; continue; }
+      }
       const chave = `${dataVal}||${rota}`;
       if (!grupos.has(chave)) {
         grupos.set(chave, {
@@ -113,12 +160,19 @@ router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
       });
     }
 
+    if (grupos.size === 0) {
+      return res.status(400).json({ error: 'Nenhuma linha da planilha está dentro do período informado.' });
+    }
+
     const imp = await db.query(
-      `INSERT INTO logi_rotas_importacoes (organizacao_id, arquivo_nome, total_rotas, total_paradas, criado_por)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      `INSERT INTO logi_rotas_importacoes
+         (organizacao_id, arquivo_nome, total_rotas, total_paradas, criado_por,
+          data_referencia, data_corte_ini, data_corte_fim, linhas_ignoradas)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [req.organizacao_id, req.file.originalname,
        grupos.size, [...grupos.values()].reduce((s, g) => s + g.paradas.length, 0),
-       req.usuario?.nome || req.usuario?.email || null]
+       req.usuario?.nome || req.usuario?.email || null,
+       dataRef, corteIni, corteFim, ignoradas]
     );
     const importacaoId = imp.rows[0].id;
 
@@ -156,7 +210,7 @@ router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
       }
     }
 
-    res.status(201).json({ importacao_id: importacaoId, rotas: grupos.size });
+    res.status(201).json({ importacao_id: importacaoId, rotas: grupos.size, ignoradas });
   } catch (err) { next(err); }
 });
 
@@ -248,6 +302,46 @@ router.post('/importacoes/:id/calcular', async (req, res, next) => {
       await geo.sleep(250); // respiro para não estourar o rate limit do OSRM público
     }
     res.json({ processadas, com_falha: comFalha, geocoder: geo.temGoogle() ? 'google' : 'nominatim' });
+  } catch (err) { next(err); }
+});
+
+/* -------- Mapa de uma rota (conferência do KM contado) -------- */
+router.get('/rota/:id/mapa', async (req, res, next) => {
+  try {
+    const rota = await db.query(
+      'SELECT * FROM logi_rotas WHERE id = $1 AND organizacao_id = $2',
+      [req.params.id, req.organizacao_id]
+    );
+    if (!rota.rows[0]) return res.status(404).json({ error: 'Rota não encontrada' });
+
+    const cfg = await db.query('SELECT * FROM logi_rotas_config WHERE organizacao_id = $1', [req.organizacao_id]);
+    const config = cfg.rows[0];
+    if (!config || config.cd_lat == null) {
+      return res.status(400).json({ error: 'CD não configurado' });
+    }
+
+    const paradas = await db.query(
+      'SELECT seq, endereco, cliente, lat, lng, geo_ok FROM logi_rotas_paradas WHERE rota_id = $1 ORDER BY seq',
+      [req.params.id]
+    );
+    const comGeo = paradas.rows.filter((p) => p.lat != null);
+    const cd = { lat: config.cd_lat, lng: config.cd_lng, endereco: config.cd_endereco };
+
+    // Traçado exatamente como o KM é contado: CD -> paradas -> CD (ou até a última, se a política for só ida)
+    const pontosIda = [cd, ...comGeo];
+    const pontos = config.incluir_volta ? [...pontosIda, cd] : pontosIda;
+    const rotaGeo = await geo.rotaOSRMComTracado(pontos);
+
+    res.json({
+      rota: rota.rows[0],
+      cd,
+      paradas: paradas.rows,
+      paradas_sem_geo: paradas.rows.length - comGeo.length,
+      incluir_volta: config.incluir_volta,
+      tracado: rotaGeo ? rotaGeo.tracado : null,
+      km_tracado: rotaGeo ? rotaGeo.km : null,
+      minutos: rotaGeo ? rotaGeo.minutos : null,
+    });
   } catch (err) { next(err); }
 });
 

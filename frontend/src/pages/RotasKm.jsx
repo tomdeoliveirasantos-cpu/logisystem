@@ -29,7 +29,6 @@ export default function RotasKm() {
   const [mapaRotaId, setMapaRotaId] = useState(null);
   const hoje = new Date().toISOString().substring(0, 10);
   const [dataRef, setDataRef] = useState(hoje);
-  const [corteIni, setCorteIni] = useState('');
   const [corteFim, setCorteFim] = useState('');
 
   const carregarConfig = useCallback(async () => {
@@ -75,7 +74,6 @@ export default function RotasKm() {
       const fd = new FormData();
       fd.append('arquivo', arquivo);
       fd.append('data_referencia', dataRef);
-      if (corteIni) fd.append('data_corte_ini', corteIni);
       if (corteFim) fd.append('data_corte_fim', corteFim);
       if (substituir) fd.append('substituir', 'true');
       const r = await api.post('/rotas/importar', fd);
@@ -219,14 +217,9 @@ export default function RotasKm() {
                 <small>Identifica a que dia/período a planilha se refere</small>
               </label>
               <label className="field-inline">
-                <span>Considerar de</span>
-                <input type="date" value={corteIni} onChange={(ev) => setCorteIni(ev.target.value)} />
-                <small>Opcional — ignora linhas anteriores</small>
-              </label>
-              <label className="field-inline">
-                <span>até</span>
+                <span>Data de corte</span>
                 <input type="date" value={corteFim} onChange={(ev) => setCorteFim(ev.target.value)} />
-                <small>Opcional — ignora linhas posteriores</small>
+                <small>Opcional — ignora entregas depois desta data</small>
               </label>
             </div>
 

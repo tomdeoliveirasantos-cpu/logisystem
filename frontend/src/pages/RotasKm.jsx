@@ -8,6 +8,12 @@ const fmt = (v) => (v !== null && v !== undefined
 const fmtKm = (v) => (v !== null && v !== undefined ? `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km` : '—');
 const fmtData = (d) => (d ? String(d).substring(0, 10).split('-').reverse().join('/') : '—');
 
+// Diferença % entre o KM calculado (ida) e o KM informado na planilha
+const difLinha = (r) => {
+  if (r.km_planilha == null || r.km_calculado_ida == null || Number(r.km_planilha) === 0) return null;
+  return ((Number(r.km_calculado_ida) - Number(r.km_planilha)) / Number(r.km_planilha)) * 100;
+};
+
 const BADGE = {
   ok: { txt: 'Calculada', cor: '#1a7f4b', bg: '#e7f6ee' },
   parcial: { txt: 'Parcial', cor: '#b7791f', bg: '#fef3e2' },
@@ -135,10 +141,11 @@ export default function RotasKm() {
 
   function exportarCSV() {
     if (!rotas.length) return;
-    const head = ['Data', 'Rota', 'Motorista', 'Placa', 'Modelo', 'Paradas', 'KM planilha', 'KM ida', 'KM ida+volta', 'Valor pago', 'Status'];
+    const head = ['Data', 'Rota', 'Motorista', 'Placa', 'Modelo', 'Paradas', 'KM planilha', 'KM ida', 'KM ida+volta', 'Dif. % (ida x planilha)', 'Valor pago', 'Status'];
     const linhas = rotas.map((r) => [
       fmtData(r.data_rota), r.rota_codigo, r.motorista || '', r.placa || '', r.modelo || '',
       r.qtd_paradas, r.km_planilha ?? '', r.km_calculado_ida ?? '', r.km_calculado_total ?? '',
+      difLinha(r) == null ? '' : difLinha(r).toFixed(1),
       r.valor_pago ?? '', BADGE[r.status_calculo]?.txt || r.status_calculo,
     ]);
     const csv = [head, ...linhas].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
@@ -163,6 +170,14 @@ export default function RotasKm() {
 
   const totalPago = rotas.reduce((s, r) => s + (Number(r.valor_pago) || 0), 0);
   const totalKm = rotas.reduce((s, r) => s + (Number(config?.incluir_volta ? r.km_calculado_total : r.km_calculado_ida) || 0), 0);
+
+  // Comparação com o KM da planilha (ROUTEASY).
+  // A planilha conta do CD até a última entrega, então o comparável é o KM ida.
+  const comparaveis = rotas.filter((r) => r.km_planilha != null && r.km_calculado_ida != null);
+  const kmPlanilha = comparaveis.reduce((s, r) => s + Number(r.km_planilha), 0);
+  const kmIdaComp = comparaveis.reduce((s, r) => s + Number(r.km_calculado_ida), 0);
+  const difKm = kmIdaComp - kmPlanilha;
+  const difPct = kmPlanilha > 0 ? (difKm / kmPlanilha) * 100 : 0;
 
   return (
     <div className="page">
@@ -189,6 +204,24 @@ export default function RotasKm() {
             <span className="total-num">{fmtKm(totalKm)}</span>
             <span className="total-lbl">KM total {config?.incluir_volta ? '(ida+volta)' : '(só ida)'}</span>
           </div>
+          {comparaveis.length > 0 && (
+            <>
+              <div className="total-card">
+                <span className="total-num">{fmtKm(kmPlanilha)}</span>
+                <span className="total-lbl">KM da planilha ({comparaveis.length} rotas)</span>
+              </div>
+              <div className="total-card">
+                <span className="total-num">{fmtKm(kmIdaComp)}</span>
+                <span className="total-lbl">KM calculado só ida (mesmas rotas)</span>
+              </div>
+              <div className={`total-card ${Math.abs(difPct) <= 10 ? 'ok' : 'alerta'}`}>
+                <span className="total-num">{difKm >= 0 ? '+' : ''}{difPct.toFixed(1)}%</span>
+                <span className="total-lbl">
+                  diferença calculado × planilha ({difKm >= 0 ? '+' : ''}{fmtKm(difKm)})
+                </span>
+              </div>
+            </>
+          )}
           <div className="total-card valor">
             <span className="total-num">{fmt(totalPago)}</span>
             <span className="total-lbl">total a pagar</span>
@@ -278,7 +311,7 @@ export default function RotasKm() {
               <div className="tabela-scroll">
                 <table className="tabela">
                   <thead>
-                    <tr><th>Data</th><th>Rota</th><th>Motorista</th><th>Modelo</th><th>Par.</th><th>KM ida</th><th>KM +volta</th><th>Valor</th><th>Status</th><th>Mapa</th></tr>
+                    <tr><th>Data</th><th>Rota</th><th>Motorista</th><th>Modelo</th><th>Par.</th><th>KM planilha</th><th>KM ida</th><th>KM +volta</th><th>Dif.</th><th>Valor</th><th>Status</th><th>Mapa</th></tr>
                   </thead>
                   <tbody>
                     {rotas.map((r) => {
@@ -290,8 +323,12 @@ export default function RotasKm() {
                           <td title={r.motorista}>{(r.motorista || '—').split(' ').slice(0, 2).join(' ')}</td>
                           <td>{r.modelo || '—'}</td>
                           <td>{r.qtd_paradas}</td>
+                          <td className="col-planilha">{fmtKm(r.km_planilha)}</td>
                           <td>{fmtKm(r.km_calculado_ida)}</td>
                           <td>{fmtKm(r.km_calculado_total)}</td>
+                          <td className={difLinha(r) == null ? '' : (Math.abs(difLinha(r)) <= 15 ? 'dif-ok' : 'dif-alerta')}>
+                            {difLinha(r) == null ? '—' : `${difLinha(r) >= 0 ? '+' : ''}${difLinha(r).toFixed(0)}%`}
+                          </td>
                           <td>{fmt(r.valor_pago)}</td>
                           <td><span className="badge" style={{ color: b.cor, background: b.bg }}>{b.txt}</span></td>
                           <td>
@@ -303,7 +340,7 @@ export default function RotasKm() {
                         </tr>
                       );
                     })}
-                    {!rotas.length && selecao && <tr><td colSpan={10} className="muted center">Sem rotas nesta importação.</td></tr>}
+                    {!rotas.length && selecao && <tr><td colSpan={12} className="muted center">Sem rotas nesta importação.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -357,11 +394,16 @@ export default function RotasKm() {
 
       <style>{`
         .page-head{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap}
-        .totais-destaque{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 4px}
+        .totais-destaque{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0 4px}
         @media(max-width:640px){.totais-destaque{grid-template-columns:repeat(2,1fr)}}
         .total-card{background:#fff;border:1px solid #e2e5ee;border-radius:12px;padding:14px 16px;display:grid;gap:2px}
         .total-card.ok{border-color:#b6e2c8;background:#f3fbf6}
         .total-card.valor{border-color:#c9942e;background:#fdf8ef}
+        .total-card.alerta{border-color:#f0c9c0;background:#fdf0ee}
+        .total-card.alerta .total-num{color:#c0392b}
+        .col-planilha{color:#556;background:#fafbff}
+        .dif-ok{color:#1a7f4b;font-weight:600}
+        .dif-alerta{color:#c0392b;font-weight:600}
         .total-num{font-size:24px;font-weight:800;color:#1a2b5c;line-height:1.1}
         .total-card.valor .total-num{color:#a06a12}
         .total-lbl{font-size:12px;color:#667}

@@ -148,15 +148,23 @@ router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
           placa: idx.placa >= 0 ? row[idx.placa] : null,
           modelo: idx.modelo >= 0 ? row[idx.modelo] : null,
           regiao: idx.regiao >= 0 ? row[idx.regiao] : null,
-          km_planilha: idx.km >= 0 ? row[idx.km] : null,
+          km_planilha: null,
           paradas: [],
         });
+      }
+      // Na planilha o KM vem POR PARADA (trecho desde o ponto anterior).
+      // O KM da rota é a soma dos trechos, não o valor da primeira linha.
+      const kmTrecho = idx.km >= 0 ? Number(row[idx.km]) : NaN;
+      if (Number.isFinite(kmTrecho)) {
+        const g = grupos.get(chave);
+        g.km_planilha = Math.round(((g.km_planilha || 0) + kmTrecho) * 100) / 100;
       }
       grupos.get(chave).paradas.push({
         seq: idx.seq >= 0 ? row[idx.seq] : grupos.get(chave).paradas.length + 1,
         endereco: row[idx.endereco],
         cliente: idx.cliente >= 0 ? row[idx.cliente] : null,
         pedido: idx.pedido >= 0 ? row[idx.pedido] : null,
+        km_trecho: Number.isFinite(kmTrecho) ? kmTrecho : null,
       });
     }
 
@@ -197,15 +205,15 @@ router.post('/importar', upload.single('arquivo'), async (req, res, next) => {
            (organizacao_id, importacao_id, data_rota, rota_codigo, motorista, placa, modelo, regiao, qtd_paradas, km_planilha)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
         [req.organizacao_id, importacaoId, parseData(g.data), String(g.rota),
-         g.motorista, g.placa, g.modelo, g.regiao, g.paradas.length, numBR(g.km_planilha)]
+         g.motorista, g.placa, g.modelo, g.regiao, g.paradas.length, g.km_planilha]
       );
       const rotaId = rota.rows[0].id;
       g.paradas.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
       for (const p of g.paradas) {
         await db.query(
-          `INSERT INTO logi_rotas_paradas (rota_id, seq, endereco, cliente, pedido)
-           VALUES ($1,$2,$3,$4,$5)`,
-          [rotaId, Number(p.seq) || null, p.endereco, p.cliente, p.pedido ? String(p.pedido) : null]
+          `INSERT INTO logi_rotas_paradas (rota_id, seq, endereco, cliente, pedido, km_trecho)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [rotaId, Number(p.seq) || null, p.endereco, p.cliente, p.pedido ? String(p.pedido) : null, p.km_trecho]
         );
       }
     }

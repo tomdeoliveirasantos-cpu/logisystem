@@ -52,10 +52,12 @@ async function main() {
 
   // usa a mesma transportadora dos veículos já cadastrados na org
   const ref = await p.query(
-    'SELECT transportadora_id FROM logi_veiculos WHERE organizacao_id = $1 AND transportadora_id IS NOT NULL LIMIT 1',
+    `SELECT transportadora_id, ag_ft FROM logi_veiculos
+      WHERE organizacao_id = $1 AND transportadora_id IS NOT NULL LIMIT 1`,
     [ORG]
   );
   const transportadoraId = ref.rows[0] ? ref.rows[0].transportadora_id : null;
+  const agFt = ref.rows[0] && ref.rows[0].ag_ft ? ref.rows[0].ag_ft : 'frota';
 
   const vExist = await p.query('SELECT placa FROM logi_veiculos WHERE organizacao_id = $1', [ORG]);
   const placasExistentes = new Set(vExist.rows.map((r) => soLetras(r.placa)));
@@ -64,9 +66,9 @@ async function main() {
   for (const v of VEICULOS) {
     if (placasExistentes.has(soLetras(v.placa))) continue;
     await p.query(
-      `INSERT INTO logi_veiculos (organizacao_id, transportadora_id, placa, modelo, tipo, ativo, status_cadastro)
-       VALUES ($1,$2,$3,$4,$5,true,'completo')`,
-      [ORG, transportadoraId, v.placa, v.tipo, v.tipo]
+      `INSERT INTO logi_veiculos (organizacao_id, transportadora_id, placa, modelo, tipo, ag_ft, ativo, status_cadastro)
+       VALUES ($1,$2,$3,$4,$5,$6,true,'completo')`,
+      [ORG, transportadoraId, v.placa, v.tipo, v.tipo, agFt]
     );
     vNovos += 1;
   }

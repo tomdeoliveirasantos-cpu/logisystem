@@ -142,10 +142,12 @@ export function AuthProvider({ children }) {
     if (org?.is_wsdevsoft && org?.perfil_na_org === 'super_admin') return true;
     const perfil = org?.perfil_na_org || user?.perfil;
     const perms = {
-      admin:       ['clientes','transportadoras','veiculos','motoristas','ordens','manutencoes','multas','financeiro','relatorios','usuarios'],
-      operador:    ['clientes','transportadoras','veiculos','motoristas','ordens','manutencoes','multas'],
+      admin:       ['clientes','transportadoras','veiculos','motoristas','ordens','manutencoes','multas','financeiro','relatorios','usuarios','saida_rota'],
+      operador:    ['clientes','transportadoras','veiculos','motoristas','ordens','manutencoes','multas','saida_rota'],
       financeiro:  ['clientes','ordens','financeiro','relatorios'],
-      super_admin: ['clientes','transportadoras','veiculos','motoristas','ordens','manutencoes','multas','financeiro','relatorios','usuarios'],
+      // Perfil restrito: só registra a saída das rotas, não vê o resto do sistema
+      apontamento: ['saida_rota'],
+      super_admin: ['clientes','transportadoras','veiculos','motoristas','ordens','manutencoes','multas','financeiro','relatorios','usuarios','saida_rota'],
     };
     return perms[perfil]?.includes(modulo) ?? false;
   };

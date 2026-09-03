@@ -15,6 +15,7 @@ import Parametros from './pages/Parametros';
 import ParametrosCadastroPublico from './pages/ParametrosCadastroPublico';
 import TabelaFretesPage from './pages/TabelaFretes';
 import RotasKm from './pages/RotasKm';
+import SaidaRota from './pages/SaidaRota';
 import Romaneio from './pages/Romaneio';
 import Importacao from './pages/Importacao';
 import CadastroMotoristaPublico from './pages/CadastroMotoristaPublico';
@@ -167,7 +168,7 @@ function ProtectedApp() {
           </div>
 
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={podeAcessar('relatorios') ? <Dashboard /> : <Navigate to="/saida-rota" />} />
             <Route path="/clientes" element={podeAcessar('clientes') ? <Clientes /> : <Navigate to="/" />} />
             <Route path="/transportadoras" element={podeAcessar('transportadoras') ? <Transportadoras /> : <Navigate to="/" />} />
             <Route path="/veiculos" element={podeAcessar('veiculos') ? <Veiculos /> : <Navigate to="/" />} />
@@ -176,6 +177,7 @@ function ProtectedApp() {
             <Route path="/ordens" element={podeAcessar('ordens') ? <Ordens /> : <Navigate to="/" />} />
             <Route path="/entregas" element={podeAcessar('ordens') ? <Entregas /> : <Navigate to="/" />} />
             <Route path="/rotas-km" element={podeAcessar('ordens') ? <RotasKm /> : <Navigate to="/" />} />
+            <Route path="/saida-rota" element={podeAcessar('saida_rota') ? <SaidaRota /> : <Navigate to="/" />} />
             <Route path="/manutencoes" element={podeAcessar('manutencoes') ? <Manutencoes /> : <Navigate to="/" />} />
             <Route path="/multas" element={podeAcessar('multas') ? <Multas /> : <Navigate to="/" />} />
             <Route path="/receber" element={podeAcessar('financeiro') ? <ContasReceber /> : <Navigate to="/" />} />

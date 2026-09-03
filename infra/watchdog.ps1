@@ -50,9 +50,50 @@ foreach ($nome in $servicos.Keys) {
   if (-not (PortaViva $servicos[$nome])) { $fora += $nome }
 }
 
+# --- 1b. Portas ok NAO garante que o usuario consegue acessar.
+# O tunnel pode entregar erro mesmo com os servicos vivos, e foi assim que
+# uma queda passou despercebida. Entao testamos tambem pela internet.
+function UrlOk($url) {
+  try {
+    $r = Invoke-WebRequest -Uri $url -Method Head -TimeoutSec 12 -UseBasicParsing -ErrorAction Stop
+    return ($r.StatusCode -lt 500)
+  } catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -and $code -lt 500) { return $true }  # 4xx e resposta valida da app
+    return $false
+  }
+}
+
 if ($fora.Count -eq 0) {
-  # tudo no ar: nada a fazer (log so a cada 60 execucoes para nao encher)
-  if ((Get-Date).Minute -eq 0) { Log "OK - todos os servicos no ar" }
+  $publicas = @(
+    'https://equityhub.wsdevsoft.com',
+    'https://api-equityhub.wsdevsoft.com/api/health',
+    'https://app.wsdevsoft.com',
+    'https://api.wsdevsoft.com'
+  )
+  $foraPublico = @()
+  foreach ($u in $publicas) { if (-not (UrlOk $u)) { $foraPublico += $u } }
+
+  if ($foraPublico.Count -gt 0) {
+    Log ("BORDA FORA (portas ok): " + ($foraPublico -join ', '))
+    $desdeUltimo = (Get-Date) - $state.ultimoCloudflared
+    if ($desdeUltimo.TotalMinutes -ge 10) {
+      Log "Reiniciando cloudflared (servicos vivos, inacessiveis pela internet)"
+      Restart-Service cloudflared -Force -ErrorAction SilentlyContinue
+      $state.ultimoCloudflared = Get-Date
+      @{ ultimoCloudflared = $state.ultimoCloudflared.ToString('o') } | ConvertTo-Json | Set-Content $StateFile
+      Start-Sleep -Seconds 10
+      $aindaFora = @()
+      foreach ($u in $foraPublico) { if (-not (UrlOk $u)) { $aindaFora += $u } }
+      if ($aindaFora.Count -eq 0) { Log "Acesso externo restabelecido" }
+      else { Log ("AINDA FORA apos restart do cloudflared: " + ($aindaFora -join ', ')) }
+    } else {
+      Log ("cloudflared reiniciado ha {0:N0} min - aguardando janela" -f $desdeUltimo.TotalMinutes)
+    }
+    exit 0
+  }
+
+  if ((Get-Date).Minute -eq 0) { Log "OK - servicos e acesso externo no ar" }
   exit 0
 }
 

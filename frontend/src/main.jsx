@@ -14,3 +14,10 @@ document.head.appendChild(style);
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode><App /></React.StrictMode>
 );
+
+// Registra o service worker: é o que permite instalar o sistema como app.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* sem PWA, app segue normal */ });
+  });
+}

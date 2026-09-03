@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
+import InstalarApp from '../components/InstalarApp.jsx';
 
 const API = 'https://api.wsdevsoft.com/api';
 
@@ -287,6 +288,10 @@ export default function Login() {
               </button>
             )}
           </form>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <InstalarApp nomeApp="o LogiSystem" cor="#2563EB" />
         </div>
 
         <div style={{ textAlign: 'center', marginTop: 24, fontSize: 12, color: '#94A3B8' }}>

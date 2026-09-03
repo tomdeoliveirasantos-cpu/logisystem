@@ -7,7 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="LogiSystem" />
-  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" id="app-manifest" />
+  <script>
+    // A área do motorista (/m/) instala como app próprio, com escopo separado
+    if (location.pathname.startsWith('/m')) {
+      document.getElementById('app-manifest').setAttribute('href', '/manifest-motorista.json');
+      document.querySelector('meta[name="apple-mobile-web-app-title"]')
+        ?.setAttribute('content', 'LogiSystem Motorista');
+    }
+  </script>
   <title>LogiSystem</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

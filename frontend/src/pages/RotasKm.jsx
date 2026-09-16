@@ -308,30 +308,33 @@ export default function RotasKm() {
                   {semEndereco} rota(s) sem endereço de entrega na planilha — não é possível calcular o KM delas.
                 </p>
               )}
-              <div className="tabela-scroll">
-                <table className="tabela">
+              <div className="tabela-scroll tabela-cartoes-wrap">
+                <table className="tabela tabela-cartoes">
                   <thead>
-                    <tr><th>Data</th><th>Rota</th><th>Motorista</th><th>Modelo</th><th>Par.</th><th>KM planilha</th><th>KM ida</th><th>KM +volta</th><th>Dif.</th><th>Valor</th><th>Status</th><th>Mapa</th></tr>
+                    <tr><th>Rota</th><th>Motorista</th><th>Modelo</th><th>Par.</th><th>KM planilha</th><th>KM ida</th><th>KM +volta</th><th>Dif.</th><th>Valor</th><th>Status</th><th>Mapa</th></tr>
                   </thead>
                   <tbody>
                     {rotas.map((r) => {
                       const b = BADGE[r.status_calculo] || BADGE.pendente;
                       return (
                         <tr key={r.id}>
-                          <td>{fmtData(r.data_rota)}</td>
-                          <td>{r.rota_codigo}</td>
-                          <td title={r.motorista}>{(r.motorista || '—').split(' ').slice(0, 2).join(' ')}</td>
-                          <td>{r.modelo || '—'}</td>
-                          <td>{r.qtd_paradas}</td>
-                          <td className="col-planilha">{fmtKm(r.km_planilha)}</td>
-                          <td>{fmtKm(r.km_calculado_ida)}</td>
-                          <td>{fmtKm(r.km_calculado_total)}</td>
-                          <td className={difLinha(r) == null ? '' : (Math.abs(difLinha(r)) <= 15 ? 'dif-ok' : 'dif-alerta')}>
+                          <td data-rotulo="Rota">
+                            <strong>Rota {r.rota_codigo}</strong> · {fmtData(r.data_rota)}
+                          </td>
+                          <td data-rotulo="Motorista" title={r.motorista}>
+                            {(r.motorista || '—').split(' ').slice(0, 2).join(' ')}
+                          </td>
+                          <td data-rotulo="Modelo">{r.modelo || '—'}</td>
+                          <td data-rotulo="Paradas">{r.qtd_paradas}</td>
+                          <td data-rotulo="KM planilha" className="col-planilha">{fmtKm(r.km_planilha)}</td>
+                          <td data-rotulo="KM ida">{fmtKm(r.km_calculado_ida)}</td>
+                          <td data-rotulo="KM ida+volta">{fmtKm(r.km_calculado_total)}</td>
+                          <td data-rotulo="Diferença" className={difLinha(r) == null ? '' : (Math.abs(difLinha(r)) <= 15 ? 'dif-ok' : 'dif-alerta')}>
                             {difLinha(r) == null ? '—' : `${difLinha(r) >= 0 ? '+' : ''}${difLinha(r).toFixed(0)}%`}
                           </td>
-                          <td>{fmt(r.valor_pago)}</td>
-                          <td><span className="badge" style={{ color: b.cor, background: b.bg }}>{b.txt}</span></td>
-                          <td>
+                          <td data-rotulo="Valor">{fmt(r.valor_pago)}</td>
+                          <td data-rotulo="Status"><span className="badge" style={{ color: b.cor, background: b.bg }}>{b.txt}</span></td>
+                          <td data-rotulo="Mapa">
                             {r.km_calculado_ida != null && (
                               <button className="btn-mapa" title="Ver no mapa o trajeto contado"
                                 onClick={() => setMapaRotaId(r.id)}>🗺️</button>
@@ -374,7 +377,7 @@ export default function RotasKm() {
               <button className="btn btn-sm" onClick={addModelo}>+ Modelo</button>
             </div>
             <p className="muted">Valor pago = valor fixo + (KM × valor por KM), conforme o modelo do veículo da rota.</p>
-            <table className="tabela">
+            <table className="tabela tabela-cartoes">
               <thead><tr><th>Modelo</th><th>Valor por KM</th><th>Valor fixo</th></tr></thead>
               <tbody>
                 {tabela.map((t, i) => (

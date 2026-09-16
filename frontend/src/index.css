@@ -483,3 +483,62 @@ tbody tr:hover td { background: #F8FAFF; }
   .page-body { overflow-x: hidden; }
   .main-content { overflow-x: hidden; }
 }
+
+/* ---------- Tabela que vira cartão no celular ----------
+   Rolar tabela larga na horizontal esconde informação. Em tela estreita
+   cada linha vira um bloco com os campos em pares rótulo/valor.
+   Requer data-rotulo em cada <td>. */
+@media (max-width: 720px) {
+  .tabela-cartoes { display: block; }
+  .tabela-cartoes thead { display: none; }
+  .tabela-cartoes tbody, .tabela-cartoes tr { display: block; }
+  .tabela-cartoes tr {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .tabela-cartoes tr:last-child { margin-bottom: 0; }
+  .tabela-cartoes td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 5px 0;
+    border: none;
+    white-space: normal;
+    text-align: right;
+  }
+  .tabela-cartoes td::before {
+    content: attr(data-rotulo);
+    flex: none;
+    color: var(--text3);
+    font-size: 11.5px;
+    text-align: left;
+  }
+  .tabela-cartoes td:first-child {
+    display: block;
+    text-align: left;
+    font-size: 14.5px;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabela-cartoes td:first-child::before { display: none; }
+  .tabela-cartoes td:empty { display: none; }
+  .tabela-cartoes-wrap { overflow-x: visible; }
+}
+
+/* ---------- Toque e feedback (mesmo padrão do EquityHub) ---------- */
+button, .btn { transition: background .15s, border-color .15s, color .15s, transform .08s ease-out; }
+button:active:not(:disabled), .btn:active:not(:disabled) { transform: translateY(1px) scale(.985); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+button:focus:not(:focus-visible) { outline: none; }
+@media (pointer: coarse) {
+  button, .btn { min-height: 44px; }
+  input:not([type="checkbox"]):not([type="radio"]), select { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

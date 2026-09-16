@@ -225,9 +225,9 @@ export default function SaidaRota() {
           <span>{lista.length} rota(s) · {totalEntregas} entregas</span>
         </div>
         {lista.length === 0 && <p className="sr-vazio">Nenhuma rota registrada hoje.</p>}
-        <div className="sr-tabela-scroll">
+        <div className="sr-tabela-scroll tabela-cartoes-wrap">
           {lista.length > 0 && (
-            <table className="sr-tabela">
+            <table className="sr-tabela tabela-cartoes">
               <thead>
                 <tr>
                   <th>Rota</th><th>Motorista</th><th>Placa</th><th>Tipo</th>
@@ -237,16 +237,16 @@ export default function SaidaRota() {
               <tbody>
                 {lista.map((r) => (
                   <tr key={r.id}>
-                    <td><strong>{r.rota_codigo}</strong></td>
-                    <td title={r.motorista_nome}>
+                    <td data-rotulo="Rota"><strong>Rota {r.rota_codigo}</strong></td>
+                    <td data-rotulo="Motorista" title={r.motorista_nome}>
                       {(r.motorista_nome || '—').split(' ').slice(0, 2).join(' ')}
                     </td>
-                    <td>{r.placa || '—'}</td>
-                    <td>{r.modelo || '—'}</td>
-                    <td>{r.qtd_entregas ?? '—'}</td>
-                    <td>{r.peso_kg ? `${Number(r.peso_kg).toLocaleString('pt-BR')} kg` : '—'}</td>
-                    <td>{r.km_inicial ?? '—'}</td>
-                    <td>{fmtHora(r.hora_saida)}</td>
+                    <td data-rotulo="Placa">{r.placa || '—'}</td>
+                    <td data-rotulo="Tipo">{r.modelo || '—'}</td>
+                    <td data-rotulo="Entregas">{r.qtd_entregas ?? '—'}</td>
+                    <td data-rotulo="Peso">{r.peso_kg ? `${Number(r.peso_kg).toLocaleString('pt-BR')} kg` : '—'}</td>
+                    <td data-rotulo="KM">{r.km_inicial ?? '—'}</td>
+                    <td data-rotulo="Saída">{fmtHora(r.hora_saida)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -44,6 +44,7 @@ $servicos = @{
   'deploy-webhook'      = 9000
   'equityhub-api'       = 3001
   'equityhub-frontend'  = 8092
+  'roteira-api'         = 3002
 }
 $fora = @()
 foreach ($nome in $servicos.Keys) {
@@ -69,7 +70,8 @@ if ($fora.Count -eq 0) {
     'https://equityhub.wsdevsoft.com',
     'https://api-equityhub.wsdevsoft.com/api/health',
     'https://app.wsdevsoft.com',
-    'https://api.wsdevsoft.com'
+    'https://api.wsdevsoft.com',
+    'https://roteira.wsdevsoft.com/api/saude'
   )
   $foraPublico = @()
   foreach ($u in $publicas) { if (-not (UrlOk $u)) { $foraPublico += $u } }
@@ -120,8 +122,9 @@ if ($pm2Fora.Count -gt 0) {
     if (-not (PortaViva $servicos[$nome])) { $aindaFora += $nome }
   }
   if ($aindaFora.Count -gt 0) {
-    Log ("Ainda fora apos resurrect: " + ($aindaFora -join ', ') + " - restart all")
-    & $PM2 restart all 2>&1 | Out-Null
+    # reinicia so o que continua fora: um app novo instavel nao pode derrubar os outros
+    Log ("Ainda fora apos resurrect: " + ($aindaFora -join ', ') + " - restart individual")
+    foreach ($nome in $aindaFora) { & $PM2 restart $nome 2>&1 | Out-Null }
     Start-Sleep -Seconds 8
   }
 }
